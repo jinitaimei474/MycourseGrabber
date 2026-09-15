@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "水源帖子导出",
+  "version": "1.0.0",
+  "description": "按主题、用户和北京时间范围导出水源帖子内容及发帖时间。",
+  "content_scripts": [{
+    "matches": ["https://shuiyuan.sjtu.edu.cn/*"],
+    "js": ["core.js", "panel.js"],
+    "run_at": "document_idle",
+    "world": "ISOLATED"
+  }]
+}
