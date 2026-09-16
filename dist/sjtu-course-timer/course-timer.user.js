@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         交大选课定时助手（页面刷新版）
+// @name         交大选课定时助手（搜索任务版）
 // @namespace    local.sjtu.course-timer
-// @version      0.4.0
-// @description  每轮输入课号并点击页面查询，更新教学班余量后选课，全部成功或截止时结束。
+// @version      0.5.0
+// @description  搜索课程和教师，点击加入最多10门课程任务，每轮逐门刷新选课。
 // @match        https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html*
 // @grant        none
 // @run-at       document-idle
@@ -46,15 +46,23 @@
   }
   function validate(c) {
     if (!Array.isArray(c.targets) || !c.targets.length) throw new Error('请先添加课程');
+    if (c.targets.length > 10) throw new Error('任务列表最多添加 10 门不同课程');
     const courses = new Set();
     for (const target of c.targets) {
       if (!target?.jxbId || !target?.kchId || courses.has(target.kchId)) throw new Error('每门课程只能指定一个教学班，不能重复添加');
       courses.add(target.kchId);
+      const options = choices(target), ids = new Set();
+      if (!Array.isArray(options) || !options.length) throw new Error('每门课程至少选择一个教学班');
+      for (const option of options) {
+        if (!option?.jxbId || option.kchId !== target.kchId || ids.has(option.jxbId)) throw new Error('备选教学班必须属于同一课程且不能重复');
+        ids.add(option.jxbId);
+      }
     }
     if (!Number.isFinite(c.startAt) || !Number.isFinite(c.endAt) || c.endAt <= c.startAt) throw new Error('结束时间必须晚于开始时间');
     if (c.dryRun !== undefined && typeof c.dryRun !== 'boolean') throw new Error('只读模式必须是布尔值');
     if (!Number.isInteger(c.intervalMs) || c.intervalMs < 5000 || c.intervalMs > 60000) throw new Error('检查间隔须为 5–60 秒');
   }
+  function choices(target) { return target.candidates === undefined ? [target] : target.candidates; }
   async function run(c, adapter, env = {}) {
     validate(c);
     const now = env.now || Date.now;
@@ -84,37 +92,43 @@
       else { item.state = 'waiting'; item.message = state === 'full' ? '满员，继续等待名额' : '暂不可选，等待页面状态恢复'; }
     };
     async function select(item) {
-      item.state = 'checking';
-      if (env.signal?.aborted || now() >= c.endAt) { item.message = '已停止或到达结束时间，未提交'; update(); return; }
-      item.message = `正在页面输入课号 ${item.target.keyword || ''} 并点击查询`; report(item.message); update();
-      let submitting = false;
-      try {
-        await adapter.prepare(item.target, env.signal, c.endAt);
-        guard(); if (now() >= c.endAt) { item.state = 'waiting'; item.message = '已到结束时间，未提交'; return; }
-        const refreshed = await adapter.refresh(item.target, env.signal, c.endAt);
-        item.lastCheckedAt = now();
-        item.count = refreshed.count; item.capacity = refreshed.capacity;
-        let state = refreshed.state;
-        guard(); if (now() >= c.endAt) { item.state = 'waiting'; item.message = '已到结束时间，未提交'; return; }
-        if (state === 'available') {
-          submitting = true;
-          report(`正在选择 ${item.target.className || item.target.jxbId}；若学校显示确认弹窗，请处理`);
-          state = (await adapter.submit(item.target, env.signal, c.endAt)).state;
+      for (const target of choices(item.target)) {
+        item.state = 'checking';
+        if (env.signal?.aborted || now() >= c.endAt) { item.message = '已停止或到达结束时间，未提交'; update(); return; }
+        item.message = `正在页面查询 ${target.keyword || ''}：${target.className || target.jxbId} ${target.teacher || ''}`; report(item.message); update();
+        let submitting = false;
+        try {
+          await adapter.prepare(target, env.signal, c.endAt);
+          guard(); if (now() >= c.endAt) { item.state = 'waiting'; item.message = '已到结束时间，未提交'; return; }
+          const refreshed = await adapter.refresh(target, env.signal, c.endAt);
+          item.lastCheckedAt = now();
+          item.count = refreshed.count; item.capacity = refreshed.capacity;
+          let state = refreshed.state;
+          guard(); if (now() >= c.endAt) { item.state = 'waiting'; item.message = '已到结束时间，未提交'; return; }
+          if (state === 'available') {
+            submitting = true;
+            report(`正在选择 ${target.className || target.jxbId}；若学校显示确认弹窗，请处理`);
+            state = (await adapter.submit(target, env.signal, c.endAt)).state;
+          }
+          setState(item, state);
+          if (item.state === 'success') { item.selectedTarget = target; item.message = `已选上：${target.className || target.jxbId} ${target.teacher || ''}`; }
+        } catch (error) {
+          item.state = submitting ? 'uncertain' : 'waiting'; item.message = error.message;
         }
-        setState(item, state);
-      } catch (error) {
-        item.state = submitting ? 'uncertain' : 'waiting'; item.message = error.message;
+        update();
+        if (item.state === 'success' || item.state === 'uncertain' || env.signal?.aborted || now() >= c.endAt) return;
       }
-      update();
     }
     while (now() < c.endAt) {
       guard();
       if (allDone()) return result('success');
       for (const item of courses) {
         if (item.state !== 'success') {
-          try {
-            if (adapter.isSelected?.(item.target) || adapter.inspect(item.target).state === 'selected') { item.state = 'success'; item.message = '已在页面核实为已选'; }
-          } catch {}
+          for (const target of choices(item.target)) {
+            try {
+              if (adapter.isSelected?.(target) || adapter.inspect(target).state === 'selected') { item.state = 'success'; item.selectedTarget = target; item.message = `已在页面核实：${target.className || target.jxbId} 已选`; break; }
+            } catch {}
+          }
         }
         if (item.state === 'uncertain' && env.takeRetry?.(item.target)) { item.state = 'pending'; item.message = '已人工核对，允许重试'; }
       }
@@ -232,11 +246,19 @@
       if (query.disabled) throw new Error('页面查询按钮不可用，等待下一轮');
       // Query every time, including when the old target row is still displayed.
       // Require both its matching response and newly rendered DOM, never an old row.
-      const response = await observe(LIST_PATH, target, () => {
+      let action = () => {
         checkpoint(signal, endAt); input.value = target.keyword; query.click();
-      }, signal, endAt);
-      if (response.status !== 200 || !Array.isArray(response.data?.tmpList) || !matching(response.data.tmpList, row => row.jxb_id === target.jxbId && row.kch_id === target.kchId).length) {
-        throw new Error('页面查询失败或未返回目标教学班，本轮不选课；请检查登录及筛选条件');
+      };
+      for (let page = 0; ; page++) {
+        const response = await observe(LIST_PATH, target, action, signal, endAt);
+        if (response.status !== 200 || !Array.isArray(response.data?.tmpList)) throw new Error('页面查询失败，本轮不选课；请检查登录及筛选条件');
+        if (matching(response.data.tmpList, row => row.jxb_id === target.jxbId && row.kch_id === target.kchId).length) break;
+        await waitUntil(() => $.active === 0, signal, endAt);
+        if (!response.data.tmpList.length || value(doc, 'isEnd') !== 'false' || typeof win.loadCoursesByPaged !== 'function' || page >= 19) {
+          throw new Error('页面查询未返回目标教学班，本轮不选课；请检查筛选条件或缩小查询范围');
+        }
+        if (context(doc) !== target.context) throw new Error('查询期间类别已改变，请重新查询');
+        action = () => win.loadCoursesByPaged();
       }
       await waitUntil(() => $.active === 0 && getRow() && getRow() !== oldRow, signal, endAt);
       checkpoint(signal, endAt);
@@ -260,7 +282,9 @@
           const params = typeof settings.data === 'string' ? new URLSearchParams(settings.data) : new URLSearchParams(settings.data || {});
           if (path === LIST_PATH) {
             const parts = target.context.split('|');
-            if (params.get('filter_list[0]') !== target.keyword || params.get('kklxdm') !== parts[3] || params.get('xkkz_id') !== parts[2]) return;
+            const words = clean(target.keyword).split(/\s+/);
+            for (let i = 0; i < words.length; i++) if (params.get(`filter_list[${i}]`) !== words[i]) return;
+            if (params.get('kklxdm') !== parts[3] || params.get('xkkz_id') !== parts[2]) return;
           } else if (params.get('kch_id') !== target.kchId) return;
           if (path === SAVE_PATH && (!expectedOperation || params.get('jxb_ids') !== expectedOperation)) return;
           let data = xhr.responseJSON;
@@ -284,14 +308,7 @@
         try { checkpoint(signal, endAt); action(); } catch (err) { finish(err); }
       });
     }
-    return {
-      inspect,
-      prepare,
-      isSelected(target) {
-        return context(doc).split('|').slice(0, 2).join('|') === target.context.split('|').slice(0, 2).join('|')
-          && matching(doc.querySelectorAll('#choosedBox input[name="right_jxb_id"]'), el => el.value === target.jxbId).length > 0;
-      },
-      async refresh(target, signal, endAt = Infinity) {
+    async function refresh(target, signal, endAt = Infinity, details = true) {
         checkpoint(signal, endAt); ready(target, false);
         if (inspect(target, false).state === 'selected') return { state: 'selected' };
         const heading = matching(doc.querySelectorAll('.panel-heading'), el => el.querySelector('input[name="kch_id"]')?.value === target.kchId)[0];
@@ -310,8 +327,46 @@
           // it does not send another request or change the selection.
           win.loadJxbxxZzxk(heading);
         }
-        return inspect(target);
+        return inspect(target, details);
+    }
+    return {
+      inspect,
+      prepare,
+      async search(keyword, signal, endAt = Infinity) {
+        keyword = clean(keyword).replace(/\s+/g, ' ');
+        if (!keyword) throw new Error('请输入课程名称、课号或教师姓名');
+        checkpoint(signal, endAt);
+        if (win.location.hostname !== 'i.sjtu.edu.cn' || value(doc, 'iskxk') !== '1' || !$) throw new Error('请先登录并进入有效的选课类别');
+        await waitUntil(() => $.active === 0, signal, endAt);
+        const input = doc.querySelector('#searchBox input[name="searchInput"]'), query = doc.querySelector('#searchBox button[name="query"]');
+        if (!input || !query || query.disabled) throw new Error('原页面查询入口不可用');
+        const request = {keyword, context: context(doc)};
+        let action = () => { input.value = keyword; query.click(); };
+        for (let page = 0; ; page++) {
+          checkpoint(signal, endAt);
+          const oldRows = new Set(doc.querySelectorAll('#contentBox tr.body_tr'));
+          const response = await observe(LIST_PATH, request, action, signal, endAt);
+          if (response.status !== 200 || !Array.isArray(response.data?.tmpList)) throw new Error(`查询“${keyword}”失败，请检查登录及筛选条件`);
+          if (!response.data.tmpList.length) { if (page === 0) return []; break; }
+          await waitUntil(() => $.active === 0 && matching(doc.querySelectorAll('#contentBox tr.body_tr'), row => !oldRows.has(row)).length > 0, signal, endAt);
+          if (context(doc) !== request.context) throw new Error('查询期间类别已改变，请重新查询');
+          if (value(doc, 'isEnd') !== 'false' || typeof win.loadCoursesByPaged !== 'function') break;
+          if (page >= 19) throw new Error('匹配结果过多，请使用更具体的课号或课程名');
+          action = () => win.loadCoursesByPaged();
+        }
+        // Initial list rows may lack teacher/time data until their course loads.
+        const loaded = new Set();
+        for (const target of scan(doc)) {
+          if (loaded.has(target.kchId)) continue;
+          await refresh(target, signal, endAt, false); loaded.add(target.kchId);
+        }
+        return scan(doc);
       },
+      isSelected(target) {
+        return context(doc).split('|').slice(0, 2).join('|') === target.context.split('|').slice(0, 2).join('|')
+          && matching(doc.querySelectorAll('#choosedBox input[name="right_jxb_id"]'), el => el.value === target.jxbId).length > 0;
+      },
+      refresh,
       async submit(target, signal, endAt = Infinity) {
         checkpoint(signal, endAt); ready(target);
         const latest = inspect(target);
@@ -327,111 +382,162 @@
     const doc = win.document;
     if (!doc.getElementById('xkxnm') || doc.getElementById('sjtu-course-timer')) return;
     const host = doc.createElement('div'); host.id = 'sjtu-course-timer';
-    host.style.cssText = 'position:fixed;right:55px;bottom:20px;z-index:9999;width:410px;max-width:90vw;';
-    const shadow = host.attachShadow({ mode: 'open' });
+    host.style.cssText = 'position:fixed;right:35px;bottom:15px;z-index:9999;width:460px;max-width:94vw;';
+    const shadow = host.attachShadow({mode:'open'});
     shadow.innerHTML = `<style>
       :host{font:14px/1.5 system-ui,sans-serif;color:#263142}*{box-sizing:border-box}
-      section{background:#fff;border:1px solid #d9dfe7;border-radius:12px;box-shadow:0 10px 38px #0003;overflow:hidden}
-      header{background:#790b0b;color:white;padding:12px 16px;display:flex;justify-content:space-between;align-items:center}
-      h2{font-size:16px;margin:0}main{padding:14px;max-height:78vh;overflow:auto}p{margin:0 0 10px;color:#536174;font-size:12px}
-      label{display:block;margin:9px 0 4px}select,input:not([type=checkbox]){width:100%;padding:8px;border:1px solid #cbd3df;border-radius:6px;font:inherit}
-      button{cursor:pointer;border:1px solid #cbd3df;border-radius:6px;padding:7px 10px;background:#f6f8fb;font:inherit;color:#263142}
+      section{background:white;border:1px solid #d9dfe7;border-radius:12px;box-shadow:0 10px 38px #0003;overflow:hidden}
+      header{background:#790b0b;color:white;padding:12px;display:flex;justify-content:space-between;align-items:center}
+      h2{font-size:16px;margin:0}main{padding:14px;max-height:80vh;overflow:auto}p{margin:6px 0;color:#536174;font-size:12px}
+      label{display:block;margin:8px 0 4px}textarea,input:not([type=checkbox]){width:100%;padding:8px;border:1px solid #cbd3df;border-radius:6px;font:inherit}
+      button{cursor:pointer;border:1px solid #cbd3df;border-radius:6px;padding:6px 9px;background:#f6f8fb;font:inherit;color:#263142}
       button:disabled{opacity:.5;cursor:default}.primary{background:#790b0b;color:white;border-color:#790b0b}
-      .row{display:flex;gap:8px;margin-top:10px}.row>*{flex:1}.small{font-size:12px}#detail{white-space:pre-wrap;margin:8px 0}
-      #status{background:#f2f5f9;border-radius:6px;padding:10px;margin-top:12px;white-space:pre-wrap;max-height:120px;overflow:auto}
-      #queue{max-height:200px;overflow:auto}.course{border:1px solid #d9dfe7;border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap}.course p{margin:4px 0}.course button{font-size:12px;padding:3px 7px}
-      header button{padding:0 7px;background:transparent;color:white;border-color:#ffffff70}input[type=checkbox]{vertical-align:middle}
-    </style><section><header><h2>交大选课定时助手 · 页面刷新 v0.4</h2><button id="fold" type="button">收起</button></header><main>
-      <p>每轮自动填课号并点击页面“查询”，更新余量后选课。多门课程依次处理；后台休眠和计时限流可能延迟检查。</p>
-      <button id="scan" type="button">读取当前教学班</button>
-      <label for="target">当前教学班（Ctrl / Shift 多选）</label><select id="target" multiple size="4"></select>
-      <p id="detail"></p><button id="add" type="button">添加所选教学班到任务</button>
-      <label>课程任务列表</label><div id="queue">尚未添加课程。</div>
+      .row{display:flex;gap:6px;margin:8px 0}.row>*{flex:1}#results,#queue{max-height:230px;overflow:auto}
+      .card{border:1px solid #d9dfe7;border-radius:6px;padding:8px;margin:6px 0;white-space:pre-wrap}.card button{font-size:12px}
+      #teachers{max-height:95px;overflow:auto}#teachers label{display:inline-block;margin:3px 10px 3px 0;font-size:12px}
+      #status{padding:10px;background:#f2f5f9;border-radius:6px;white-space:pre-wrap;margin-top:10px;max-height:130px;overflow:auto}
+      header button{background:transparent;color:white;border-color:#ffffff70}input[type=checkbox]{vertical-align:middle}
+    </style><section><header><h2>交大选课助手 · 搜索任务 v0.5</h2><button id="fold">收起</button></header><main>
+      <label for="queries">课程名称 / 课号（多个用逗号或换行分隔）</label>
+      <textarea id="queries" rows="2" placeholder="例如：EE2905，电工学"></textarea>
+      <label for="teacherQuery">教师姓名（可选，多人用逗号分隔）</label>
+      <input id="teacherQuery" placeholder="例如：张老师，李老师；也可只填教师查询">
+      <p>在原网页选好课程类别。不同关键词分别查询并合并结果；同门课可添加多个教师的班作为备选，任一选上即完成该门。</p>
+      <div class="row"><button id="searchBtn" class="primary">查询课程</button><button id="scan">读取当前页面</button></div>
+      <label>教师筛选（可多选）</label><div id="teachers"></div>
+      <p id="resultCount">查询后，点击教学班旁的“加入任务”。</p><div id="results"></div>
+      <label id="queueCount">任务列表：0 / 10 门</label><div id="queue"></div>
       <label for="start">开始时间（北京时间）</label><input id="start" type="datetime-local" step="1">
       <label for="end">结束时间（北京时间）</label><input id="end" type="datetime-local" step="1">
       <label>每轮完成后的等待间隔（秒）<input id="interval" type="number" min="5" max="60" value="5"></label>
-      <label class="small"><input id="dry" type="checkbox" checked> 仅检查，不刷新余量、不提交选课</label>
-      <div class="row"><button id="startBtn" class="primary" type="button">执行检查</button><button id="stop" type="button" disabled>停止</button></div>
-      <div id="status" role="status">尚未启动任何任务。</div>
-      <p style="margin-top:9px">全部成功或到结束时间时结束。满员继续；弹窗等待处理，结果不明需核对。运行期间请勿手动操作原页面查询和选课。刷新、关闭页面或点击停止可取消任务。</p>
+      <label><input id="dry" type="checkbox" checked> 仅检查任务，不刷新、不提交选课</label>
+      <div class="row"><button id="startBtn" class="primary">检查全部任务</button><button id="stop" disabled>停止</button></div>
+      <div id="status" role="status">尚未启动。先查询并将教学班加入任务列表。</div>
+      <p>启动后按任务顺序，逐门填课号、点击原网页查询、更新余量并选课。全部成功或到结束时间终止。满员继续等待；确认弹窗需你处理。刷新或关闭网页会清空任务。</p>
     </main></section>`;
     doc.body.appendChild(host);
-    const el = id => shadow.getElementById(id);
-    const adapter = createAdapter(win);
+    const el = id => shadow.getElementById(id), adapter = createAdapter(win);
     let targets = [], queue = [], progress = [], controller = null;
+    let selectedTeachers = new Set();
     const retries = new Set();
-    const status = msg => { el('status').textContent = msg; };
-    const states = { 'dry-run': '只读检查完成，未发出请求、未提交。', success: '所有目标课程已选上，请核对右侧已选列表。', expired: '已到结束时间，不再发起新选课操作；请核对任务列表和网站已选列表。' };
-    const labels = { available: '有余量', full: '已满', selected: '已选', blocked: '暂不可选', pending: '待开始', checking: '查询中', waiting: '等待中', uncertain: '待人工核对', success: '已成功' };
+    const status = message => { el('status').textContent = message; };
+    const terms = raw => [...new Set(matching(String(raw).split(/[\n,，;；]+/).map(clean), word => !!word))];
+    const controls = ['queries','teacherQuery','searchBtn','scan','start','end','interval','dry','startBtn'];
+    const labels = {available:'有余量',full:'已满',selected:'已选',blocked:'待核对',pending:'待开始',checking:'查询中',waiting:'等待中',uncertain:'待人工核对',success:'已成功'};
+    function busy() {
+      for (const id of controls) el(id).disabled = !!controller;
+      el('stop').disabled = !controller;
+      for (const input of el('teachers').querySelectorAll('input')) input.disabled = !!controller;
+      renderQueue(); renderResults();
+    }
+    function add(target) {
+      if (controller) return;
+      if (!target.keyword) { status('没有读取到课号，请展开原网页课程后重新读取。'); return; }
+      let group = matching(queue, item => item.kchId === target.kchId)[0];
+      if (group && choices(group)[0].context.split('|').slice(0,2).join('|') !== target.context.split('|').slice(0,2).join('|')) { status('不能把不同学期的教学班加入同一任务。'); return; }
+      if (!group && queue.length >= 10) { status('最多添加 10 门不同课程；可先移除不需要的课程。'); return; }
+      if (group) {
+        if (!matching(group.candidates, item => item.jxbId === target.jxbId).length) group.candidates.push({...target});
+      } else queue.push({...target,candidates:[{...target}]});
+      progress = []; renderQueue(); renderResults(); status(`已加入任务：${queue.length} / 10 门课程。可继续查询并添加。`);
+    }
+    function renderResults() {
+      el('results').replaceChildren();
+      const visible = matching(targets, target => selectedTeachers.has(target.teacher || '教师待加载'));
+      el('resultCount').textContent = `显示 ${visible.length} / ${targets.length} 个教学班；点击加入，支持跨查询累计。`;
+      for (const target of visible) {
+        const group = matching(queue, item => item.kchId === target.kchId)[0];
+        const added = group && matching(choices(group), item => item.jxbId === target.jxbId).length;
+        const card = doc.createElement('div'); card.className = 'card';
+        const title = doc.createElement('strong'); title.textContent = `${target.course}\n${target.className}`;
+        const detail = doc.createElement('p'); detail.textContent = `${target.teacher || '教师待加载'}\n${target.time}\n已选/容量：${target.count || '?'}/${target.capacity || '?'} · ${labels[target.state] || '待核对'}`;
+        const button = doc.createElement('button'); button.dataset.add = target.jxbId; button.textContent = added ? '已加入' : '加入任务';
+        button.disabled = !!controller || !!added || (!group && queue.length >= 10); button.onclick = () => add(target);
+        card.append(title,detail,button); el('results').appendChild(card);
+      }
+    }
+    function setResults(items) {
+      const unique = new Map();
+      for (const item of items) unique.set(`${item.context}|${item.kchId}|${item.jxbId}`,item);
+      targets = [...unique.values()]; selectedTeachers = new Set(targets.map(item => item.teacher || '教师待加载'));
+      el('teachers').replaceChildren();
+      for (const teacher of selectedTeachers) {
+        const label = doc.createElement('label'), checkbox = doc.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.disabled = !!controller;
+        checkbox.onchange = () => { if (checkbox.checked) selectedTeachers.add(teacher); else selectedTeachers.delete(teacher); renderResults(); };
+        label.append(checkbox,doc.createTextNode(teacher)); el('teachers').appendChild(label);
+      }
+      renderResults();
+    }
     function renderQueue() {
+      el('queueCount').textContent = `任务列表：${queue.length} / 10 门`;
       el('queue').replaceChildren();
-      if (!queue.length) { el('queue').textContent = '尚未添加课程。'; return; }
-      for (const target of queue) {
-        const item = matching(progress, x => x.target.jxbId === target.jxbId)[0];
-        const card = doc.createElement('div'); card.className = 'course';
-        const title = doc.createElement('strong'); title.textContent = `${target.keyword || ''} · ${target.className} ${target.teacher}`; card.appendChild(title);
-        const msg = doc.createElement('p');
-        msg.textContent = item ? `${labels[item.state]} · 已检查 ${item.attempts} 次\n${item.message}${item.inspection ? `；当前状态：${labels[item.inspection.state] || '待核对'}` : ''}` : `${target.time}\n尚未启动`;
-        if (item?.lastCheckedAt) {
-          msg.textContent += `\n上次页面刷新：${new Date(item.lastCheckedAt + 28800000).toISOString().slice(11, 19)}（北京时间）`;
-          if (item.count !== undefined && item.capacity !== undefined) msg.textContent += `；已选/容量：${item.count}/${item.capacity}`;
+      for (const group of queue) {
+        const item = matching(progress, x => x.target.kchId === group.kchId)[0];
+        const card = doc.createElement('div'); card.className = 'card';
+        const title = doc.createElement('strong'); title.textContent = `${group.course || group.keyword} · ${choices(group).length} 个备选班`; card.appendChild(title);
+        for (const target of choices(group)) {
+          const line = doc.createElement('p'); line.textContent = `${target.className} ${target.teacher}\n${target.time} `;
+          const remove = doc.createElement('button'); remove.dataset.remove = target.jxbId; remove.textContent = '移除'; remove.disabled = !!controller;
+          remove.onclick = () => {
+            if (controller) return;
+            const remaining = matching(group.candidates, x => x.jxbId !== target.jxbId);
+            queue = remaining.length ? queue.map(x => x === group ? {...remaining[0],candidates:remaining} : x) : matching(queue, x => x !== group);
+            progress = []; renderQueue(); renderResults();
+          };
+          line.appendChild(remove); card.appendChild(line);
         }
-        card.appendChild(msg);
-        if (!controller) {
-          const remove = doc.createElement('button'); remove.textContent = '移除'; remove.onclick = () => { queue = matching(queue, x => x.jxbId !== target.jxbId); renderQueue(); }; card.appendChild(remove);
-        } else if (item?.state === 'uncertain') {
-          const retry = doc.createElement('button'); retry.textContent = retries.has(target.jxbId) ? '等待重试' : '已核对未选上，允许重试';
-          retry.disabled = retries.has(target.jxbId);
-          retry.onclick = () => { retries.add(target.jxbId); renderQueue(); }; card.appendChild(retry);
+        const message = doc.createElement('p');
+        message.textContent = item ? `${labels[item.state]} · 已检查 ${item.attempts} 轮\n${item.message}` : '尚未启动';
+        if (item?.lastCheckedAt) message.textContent += `\n上次页面刷新：${new Date(item.lastCheckedAt+28800000).toISOString().slice(11,19)}；已选/容量：${item.count ?? '?'}/${item.capacity ?? '?'}`;
+        card.appendChild(message);
+        if (controller && item?.state === 'uncertain') {
+          const retry = doc.createElement('button'); retry.textContent = retries.has(group.kchId) ? '等待重试' : '已核对未选上，允许重试'; retry.disabled = retries.has(group.kchId);
+          retry.onclick = () => { retries.add(group.kchId); renderQueue(); }; card.appendChild(retry);
         }
         el('queue').appendChild(card);
       }
     }
-    el('start').value = new Date(Date.now() + 28800000 + 60000).toISOString().slice(0, 19);
-    el('end').value = new Date(Date.now() + 28800000 + 3600000).toISOString().slice(0, 19);
-    el('fold').onclick = () => { const main = shadow.querySelector('main'); main.hidden = !main.hidden; el('fold').textContent = main.hidden ? '展开' : '收起'; };
-    el('scan').onclick = () => {
-      try { targets = scan(doc); }
-      catch (error) { targets = []; el('target').replaceChildren(); status(error.message); return; }
-      el('target').replaceChildren();
-      for (const [index, t] of targets.entries()) el('target').add(new Option(`${t.className} ${t.teacher} [${t.count}/${t.capacity}]`, String(index)));
-      el('detail').textContent = ''; status(`读取到 ${targets.length} 个教学班；任务列表已有 ${queue.length} 门。`);
+    el('start').value = new Date(Date.now()+28800000+60000).toISOString().slice(0,19);
+    el('end').value = new Date(Date.now()+28800000+3600000).toISOString().slice(0,19);
+    el('fold').onclick = () => { const main=shadow.querySelector('main'); main.hidden=!main.hidden; el('fold').textContent=main.hidden?'展开':'收起'; };
+    el('scan').onclick = () => { if (controller) return; setResults(scan(doc)); status('已读取当前页面；已有任务保留。'); };
+    el('searchBtn').onclick = async () => {
+      if (controller) return;
+      const teachers = terms(el('teacherQuery').value), inputTerms = terms(el('queries').value), keywords = inputTerms.length ? inputTerms : teachers;
+      if (!keywords.length) { status('请输入课程名称、课号或教师姓名。'); return; }
+      if (keywords.length > 20) { status('单次最多输入 20 个查询词，请分批查询。'); return; }
+      controller = new AbortController(); const signal=controller.signal; busy(); setResults([]);
+      const found = [], errors = [];
+      try {
+        for (const keyword of keywords) {
+          if (signal.aborted) break;
+          status(`正在查询：${keyword}；查询只加载信息，不选课。`);
+          try {
+            const items = await adapter.search(keyword,signal,Date.now()+120000);
+            for (const target of items) if (!teachers.length || matching(teachers,name => target.teacher.includes(name)).length) found.push(target);
+            setResults(found);
+          } catch (error) { errors.push(`${keyword}：${error.message}`); }
+        }
+        status(`${signal.aborted?'查询已停止':'查询完成'}，得到 ${targets.length} 个教学班；点击加入任务。${errors.length?'\n'+errors.join('\n'):''}`);
+      } finally { controller=null; busy(); }
     };
-    el('add').onclick = () => {
-      const problems = [];
-      for (const option of el('target').selectedOptions) {
-        const target = targets[Number(option.value)];
-        if (!target.keyword) { problems.push(`${target.className}：未读取到课号，请展开课程后重新读取`); continue; }
-        if (matching(queue, x => x.kchId === target.kchId).length) { problems.push(`${target.className}：该课程已经在任务中`); continue; }
-        queue.push({...target});
-      }
-      renderQueue(); status(`任务中共 ${queue.length} 门课程。${problems.length ? '\n' + problems.join('\n') : ''}`);
-    };
-    el('target').onchange = () => {
-      const t = el('target').value === '' ? null : targets[Number(el('target').value)];
-      el('detail').textContent = t ? `${t.course}\n${t.className} ${t.teacher}\n${t.time}\n已选/容量：${t.count}/${t.capacity}` : '';
-    };
-    el('dry').onchange = () => { el('startBtn').textContent = el('dry').checked ? '执行检查' : '启动定时选课'; };
-    const controls = ['scan', 'target', 'add', 'start', 'end', 'interval', 'dry', 'startBtn'];
-    el('stop').onclick = () => controller?.abort();
-    win.SJTUCourseTimer.stop = () => controller?.abort();
+    el('dry').onchange = () => { el('startBtn').textContent=el('dry').checked?'检查全部任务':'启动全部任务'; };
+    el('stop').onclick = () => controller?.abort(); win.SJTUCourseTimer.stop = () => controller?.abort();
     el('startBtn').onclick = async () => {
       if (controller) return;
       try {
-        const config = { targets: queue.slice(), startAt: parseBeijing(el('start').value), endAt: parseBeijing(el('end').value),
-          intervalMs: Number(el('interval').value) * 1000, dryRun: el('dry').checked };
-        validate(config);
-        if (!config.dryRun && config.endAt <= Date.now()) throw new Error('结束时间已经过去，请重新设置');
-        controller = new AbortController(); retries.clear(); progress = []; renderQueue(); controls.forEach(id => { el(id).disabled = true; }); el('stop').disabled = false;
-        const result = await run(config, adapter, { signal: controller.signal, onStatus: status,
-          onUpdate: items => { progress = items; renderQueue(); },
-          takeRetry: target => retries.delete(target.jxbId) });
-        progress = result.courses;
-        status(`${states[result.state] || result.state}\n已成功 ${matching(progress, x => x.state === 'success').length}/${queue.length} 门。`);
-      } catch (err) { status(err.message); }
-      finally { controller = null; renderQueue(); controls.forEach(id => { el(id).disabled = false; }); el('stop').disabled = true; }
+        const config={targets:queue.map(group=>({...group,candidates:group.candidates.slice()})),startAt:parseBeijing(el('start').value),endAt:parseBeijing(el('end').value),intervalMs:Number(el('interval').value)*1000,dryRun:el('dry').checked};
+        validate(config); if (!config.dryRun && config.endAt<=Date.now()) throw new Error('结束时间已经过去，请重新设置');
+        controller=new AbortController(); retries.clear(); progress=[]; busy();
+        const result=await run(config,adapter,{signal:controller.signal,onStatus:status,onUpdate:items=>{progress=items;renderQueue();},takeRetry:target=>retries.delete(target.kchId)});
+        progress=result.courses;
+        const messages={'dry-run':'只读检查完成，未发出请求、未提交。',success:'全部课程已成功，请核对网站已选列表。',expired:'已到结束时间，请核对网站已选列表。'};
+        status(`${messages[result.state] || result.state}\n已成功 ${matching(progress,x=>x.state==='success').length}/${queue.length} 门。`);
+      } catch(error) { status(error.message); }
+      finally { controller=null; busy(); }
     };
-    win.addEventListener('pagehide', () => controller?.abort());
+    win.addEventListener('pagehide',()=>controller?.abort()); renderQueue();
   }
+
   return { parseBeijing, classifyResponse, run, scan, createAdapter, mount };
 });

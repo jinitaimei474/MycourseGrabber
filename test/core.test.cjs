@@ -105,6 +105,32 @@ test('duplicate courses and invalid configurations rejected before activity',asy
   for(const extra of [{targets:[]},{targets:[a,a]},{targets:[a,{...b,kchId:a.kchId}]},{endAt:10000},{endAt:Infinity},{intervalMs:1},{dryRun:'false'}]){
     const h=harness();await assert.rejects(()=>core.run(config(extra),h.adapter,h.env));assert.deepEqual(h.effects,[]);}
 });
+test('ten courses run in one round and an eleventh course is rejected before activity',async()=>{
+  const targets=Array.from({length:10},(_,i)=>({jxbId:'t'+i,kchId:'course'+i}));
+  const h=harness();assert.equal((await core.run(config({targets}),h.adapter,h.env)).state,'success');assert.equal(Object.keys(h.writes).length,10);
+  const extra=harness();await assert.rejects(()=>core.run(config({targets:[...targets,{jxbId:'eleven',kchId:'eleven'}]}),extra.adapter,extra.env),/10/);assert.deepEqual(extra.effects,[]);
+});
+test('alternate teachers of one course are tried until one succeeds',async()=>{
+  const a2={...a,jxbId:'a2',className:'A2'};const h=harness({a:['full']});
+  const r=await core.run(config({targets:[{...a,candidates:[a,a2]},b]}),h.adapter,h.env);
+  assert.equal(r.state,'success');assert.deepEqual(h.writes,{a2:1,b:1});assert.equal(r.courses[0].selectedTarget.jxbId,'a2');
+});
+test('one successful teacher choice prevents all other choices of that course from submitting',async()=>{
+  const a2={...a,jxbId:'a2'};const h=harness();
+  assert.equal((await core.run(config({targets:[{...a,candidates:[a,a2]},b]}),h.adapter,h.env)).state,'success');
+  assert.deepEqual(h.writes,{a:1,b:1});assert.equal(h.effects.filter(e=>e[1]==='a2').length,0);
+});
+test('uncertain submission freezes all alternatives of that course while other courses continue',async()=>{
+  const a2={...a,jxbId:'a2'};const h=harness({},{a:['unknown']});
+  const r=await core.run(config({targets:[{...a,candidates:[a,a2]},b]}),h.adapter,h.env);
+  assert.equal(r.state,'expired');assert.deepEqual(h.writes,{a:1,b:1});assert.equal(h.effects.filter(e=>e[1]==='a2').length,0);
+});
+test('a selected alternative completes its course and mismatched alternatives are rejected',async()=>{
+  const a2={...a,jxbId:'a2'};const h=harness();h.adapter.isSelected=t=>t.jxbId==='a2';
+  const r=await core.run(config({targets:[{...a,candidates:[a,a2]}]}),h.adapter,h.env);
+  assert.equal(r.state,'success');assert.deepEqual(h.effects,[]);
+  for(const candidates of [[],[a,b],[a,a]]) { const f=harness();await assert.rejects(()=>core.run(config({targets:[{...a,candidates}]}),f.adapter,f.env));assert.deepEqual(f.effects,[]); }
+});
 test('legacy array/string overrides do not break scanning',()=>{
   const realm=vm.createContext({module:{exports:{}},URL,setTimeout,clearTimeout});
   vm.runInContext(`Array.prototype.filter=function(f){const a=[];for(let i=0;i<this.length;i++)if(f(i,this[i]))a.push(this[i]);return a};Array.prototype.some=function(f){for(let i=0;i<this.length;i++)if(f(i,this[i]))return true;return false};String.prototype.trim=function(){return this.replace(/\\s+/g,'')};`,realm);

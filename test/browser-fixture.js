@@ -20,10 +20,12 @@
     function emit(path, data, body, status=200) {
       for (const listener of [...(events.get('ajaxComplete')||[])]) listener({}, {status,responseJSON:body}, {url:path,data:new URLSearchParams(data).toString()});
     }
-    function render(id, kch) {
-      doc.getElementById('contentBox').innerHTML = `<div class="panel-heading"><span id="kcmc_${kch}">(CODE${id})Course ${id}</span><input name="kch_id" value="${kch}"><input name="czzt" value="1"><a class="expand_close expand1"></a></div>
+    function render(id, kch, append=false) {
+      if(!append)doc.getElementById('contentBox').replaceChildren();
+      const part=doc.createElement('div');part.innerHTML = `<div class="panel-heading"><span id="kcmc_${kch}">(CODE${id})Course ${id}</span><input name="kch_id" value="${kch}"><input name="czzt" value="1"><a class="expand_close expand1"></a></div>
         <div class="panel-body" style="display:none"><table><tbody><tr class="body_tr"><td class="jxb_id">${id}</td><td class="kch_id">${kch}</td><td class="do_jxb_id">op-${id}</td><td class="jxbzls">1</td><td class="jxbmc">Class ${id}</td><td class="jsxmzc">Teacher ${id}</td><td class="sksj">Monday</td><td class="rsxx"><span class="jxbrs">10</span>/<span class="jxbrl">20</span></td><td class="an"><button onclick="chooseCourseZzxk()">选课</button></td></tr></tbody></table></div>`;
-      const button=doc.querySelector('.an button');
+      doc.getElementById('contentBox').append(...part.childNodes);
+      const rows=doc.querySelectorAll('.body_tr');const button=rows[rows.length-1].querySelector('.an button');
       button.addEventListener('click',()=>{effects.push(['submit',id]);setTimeout(()=>{
         emit('/xsxk/zzxkyzbjk_xkBcZyZzxkYzb.html',{kch_id:kch,jxb_ids:'wrong-op'},{flag:'1'});
         emit('/xsxk/zzxkyzbjk_xkBcZyZzxkYzb.html',{kch_id:kch,jxb_ids:`op-${id}`},{flag:win.submitFlag || '-1'});
@@ -34,23 +36,24 @@
       const arrow=heading.querySelector('.expand_close');const collapsed=arrow.classList.contains('expand1');
       arrow.className=collapsed?'expand_close close1':'expand_close expand1';heading.nextElementSibling.style.display=collapsed?'block':'none';
     }
-    win.loadJxbxxZzxk = heading => {const kch=heading.querySelector('input[name="kch_id"]').value;const id=doc.querySelector('.jxb_id').textContent;
+    win.loadJxbxxZzxk = heading => {const kch=heading.querySelector('input[name="kch_id"]').value;const row=heading.nextElementSibling.querySelector('.body_tr');const id=row.querySelector('.jxb_id').textContent;
       if(heading.querySelector('input[name="czzt"]').value==='1'){toggle(heading);return;}
       effects.push(['refresh',id]);setTimeout(()=>{
         emit('/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html',{kch_id:kch},[{jxb_id:id}]);
-        setTimeout(()=>{toggle(heading);const counts=win.counts?.[id]||['10','20'];doc.querySelector('.jxbrs').textContent=counts[0];doc.querySelector('.jxbrl').textContent=counts[1];heading.querySelector('input[name="czzt"]').value='1';},win.renderDelay||1);
+        setTimeout(()=>{toggle(heading);const counts=win.counts?.[id]||['10','20'];row.querySelector('.jxbrs').textContent=counts[0];row.querySelector('.jxbrl').textContent=counts[1];heading.querySelector('input[name="czzt"]').value='1';},win.renderDelay||1);
       },1);};
     doc.getElementById('tab_kklx_b').addEventListener('click',()=>{
       effects.push(['category','b']);doc.getElementById('xkkz_id').value='control-b';doc.getElementById('kklxdm').value='10';
       doc.querySelector('#nav_tab li.active').classList.remove('active');doc.getElementById('tab_kklx_b').parentElement.classList.add('active');doc.getElementById('contentBox').replaceChildren();});
     doc.querySelector('button[name="query"]').addEventListener('click',()=>{
-      const keyword=doc.querySelector('input[name="searchInput"]').value;effects.push(['query',keyword]);const id=keyword==='CODEa'?'a':'b';
+      const keyword=doc.querySelector('input[name="searchInput"]').value;effects.push(['query',keyword]);const id=keyword.startsWith('CODE')?keyword.slice(4):(keyword==='Course a'||keyword==='Teacher a'?'a':'b');const ids=win.catalog?.[keyword]||[id];
       if(win.noListResponse)return;
       jq.active++;
       setTimeout(()=>{
-        if(!win.listFailure&&!win.keepOldRow){render(id,'course-'+id);if(win.autoExpand){const heading=doc.querySelector('.panel-heading');heading.querySelector('input[name="czzt"]').value='0';win.loadJxbxxZzxk(heading);}}
-        const params={'filter_list[0]':keyword,kklxdm:doc.getElementById('kklxdm').value,xkkz_id:doc.getElementById('xkkz_id').value};
-        emit('/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html',params,{tmpList:[{jxb_id:id,kch_id:'course-'+id}]},win.listFailure?500:200);
+        if(!win.listFailure&&!win.keepOldRow){ids.forEach((item,i)=>render(item,'course-'+item,i>0));if(win.autoExpand){const heading=doc.querySelector('.panel-heading');heading.querySelector('input[name="czzt"]').value='0';win.loadJxbxxZzxk(heading);}}
+        const params={kklxdm:doc.getElementById('kklxdm').value,xkkz_id:doc.getElementById('xkkz_id').value};
+        keyword.split(' ').filter(word=>word.trim()).forEach((word,i)=>{params['filter_list['+i+']']=word;});
+        emit('/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html',params,{tmpList:ids.map(item=>({jxb_id:item,kch_id:'course-'+item}))},win.listFailure?500:200);
         jq.active--;
       },win.listDelay||20);
     });
@@ -152,16 +155,82 @@
     let message='';try{await f.adapter.submit(f.target,undefined,Date.now()+300);}catch(error){message=error.message;}
     assert(message.includes('结束时间'),'confirmation ignored deadline or rejected too early');
   });
-  await test('panel accumulates courses from separate queries and defaults to dry run',async()=>{
-    const f=fixture();f.win.SJTUCourseTimer=api;api.mount(f.win);
-    const p=f.doc.getElementById('sjtu-course-timer').shadowRoot;
-    p.getElementById('scan').click();p.getElementById('target').options[0].selected=true;p.getElementById('add').click();
-    f.render('b','course-b');p.getElementById('scan').click();p.getElementById('target').options[0].selected=true;p.getElementById('add').click();
-    assert(p.getElementById('queue').children.length===2,'queue lost previous query');
-    assert(p.getElementById('dry').checked,'default is not read only');
-    await p.getElementById('startBtn').onclick();assert(f.effects.length===0,'dry run issued website action');
-    assert(p.getElementById('status').textContent.includes('只读检查完成'),'dry run failed');
-    assert(p.getElementById('stop').disabled,'dry run still running');
+  await test('search queries by name and hydrates all matching courses without enrollment',async()=>{
+    const f=fixture();f.win.catalog={'Course a':['a','b']};
+    const found=await f.adapter.search('Course a',undefined,Date.now()+3000);
+    assert(found.length===2&&found[0].keyword==='CODEa'&&found[1].keyword==='CODEb','search lost matches');
+    assert(f.effects.filter(e=>e[0]==='refresh').length===2&&!f.effects.some(e=>e[0]==='submit'),'search did not load each course or enrolled');
+  });
+  await test('empty search clears stale results and failed search rejects',async()=>{
+    const f=fixture();f.win.catalog={missing:[]};assert((await f.adapter.search('missing',undefined,Date.now()+1000)).length===0,'empty query reused old rows');
+    f.win.listFailure=true;let failed=false;try{await f.adapter.search('CODEa',undefined,Date.now()+1000);}catch{failed=true;}assert(failed,'failed search accepted');
+  });
+  await test('search includes later pages and hydrates their teachers before returning',async()=>{
+    const f=fixture();const end=f.doc.createElement('input');end.id='isEnd';end.value='false';f.doc.body.appendChild(end);let pages=0;
+    f.win.loadCoursesByPaged=()=>{pages++;f.render('b','course-b',true);end.value='true';f.emit('/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html',{'filter_list[0]':'CODEa',kklxdm:'01',xkkz_id:'control-a'},{tmpList:[{jxb_id:'b',kch_id:'course-b'}]});};
+    const found=await f.adapter.search('CODEa',undefined,Date.now()+3000);
+    assert(found.length===2&&pages===1,'later page missing');assert(f.effects.filter(e=>e[0]==='refresh').length===2,'later page was not hydrated');
+  });
+  await test('search normalizes full-width spaces and tabs before matching website requests',async()=>{
+    const f=fixture();const found=await f.adapter.search('Course\u3000\ta',undefined,Date.now()+1000);
+    assert(found.length===1&&found[0].jxbId==='a','whitespace query lost its response');
+    assert(f.effects[0][1]==='Course a','search keyword not normalized');
+  });
+  await test('scheduled task finds its saved teaching class on a later query page',async()=>{
+    const f=fixture();f.render('b','course-b');const target={...api.scan(f.doc)[0],keyword:'CODEa'};f.render('a','course-a');
+    const end=f.doc.createElement('input');end.id='isEnd';end.value='false';f.doc.body.appendChild(end);let pages=0;
+    f.win.loadCoursesByPaged=()=>{pages++;f.render('b','course-b',true);end.value='true';f.emit('/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html',{'filter_list[0]':'CODEa',kklxdm:'01',xkkz_id:'control-a'},{tmpList:[{jxb_id:'b',kch_id:'course-b'}]});};
+    await f.adapter.prepare(target,undefined,Date.now()+2000);assert(pages===1&&f.adapter.inspect(target).jxbId==='b','later page task not located');
+  });
+  await test('search cards accumulate selected tasks across queries and start both courses',async()=>{
+    const f=fixture();f.win.SJTUCourseTimer=api;api.mount(f.win);const p=f.doc.getElementById('sjtu-course-timer').shadowRoot;
+    assert(p.getElementById('queries'),'missing search mode');
+    p.getElementById('queries').value='CODEa';await p.getElementById('searchBtn').onclick();p.querySelector('#results button[data-add]').click();
+    p.getElementById('queries').value='CODEb';await p.getElementById('searchBtn').onclick();p.querySelector('#results button[data-add]').click();
+    assert(p.getElementById('queue').children.length===2,'query replaced queue');
+    assert(!f.effects.some(e=>e[0]==='submit'),'adding course submitted it');
+    assert(p.getElementById('dry').checked,'default no longer read only');await p.getElementById('startBtn').onclick();
+    const start=f.effects.length;f.win.submitFlag='1';p.getElementById('dry').checked=false;
+    p.getElementById('start').value=new Date(Date.now()+28800000-1000).toISOString().slice(0,19);
+    p.getElementById('end').value=new Date(Date.now()+28800000+10000).toISOString().slice(0,19);
+    await p.getElementById('startBtn').onclick();
+    assert(JSON.stringify(f.effects.slice(start).filter(e=>e[0]==='submit'))===JSON.stringify([['submit','a'],['submit','b']]),'only one added course ran');
+  });
+  await test('multi-keyword search and teacher checkboxes narrow choices without clearing tasks',async()=>{
+    const f=fixture();f.win.SJTUCourseTimer=api;api.mount(f.win);const p=f.doc.getElementById('sjtu-course-timer').shadowRoot;
+    p.getElementById('queries').value='CODEa，CODEb';await p.getElementById('searchBtn').onclick();
+    assert(p.querySelectorAll('#results button[data-add]').length===2,'multiple queries not accumulated');
+    const check=p.querySelector('#teachers input');check.checked=false;check.onchange();
+    assert(p.querySelectorAll('#results button[data-add]').length===1,'teacher multi-select not applied');
+    p.querySelector('#results button[data-add]').click();assert(p.getElementById('queue').children.length===1,'filtered card not added');
+  });
+  await test('same-course teachers join as alternatives and the eleventh course is blocked in UI',async()=>{
+    const f=fixture();f.win.SJTUCourseTimer=api;api.mount(f.win);const p=f.doc.getElementById('sjtu-course-timer').shadowRoot;
+    p.getElementById('scan').click();p.querySelector('#results button[data-add]').click();
+    f.render('a2','course-a');p.getElementById('scan').click();p.querySelector('#results button[data-add]').click();
+    assert(p.getElementById('queue').children.length===1&&p.querySelectorAll('#queue [data-remove]').length===2,'alternatives rejected or counted as two courses');
+    for(let i=1;i<=10;i++){f.render('x'+i,'course-x'+i);p.getElementById('scan').click();const add=p.querySelector('#results button[data-add]');if(!add.disabled)add.click();}
+    assert(p.getElementById('queue').children.length===10,'ten-course cap not applied');
+  });
+  await test('ten cards added from search all run through the actual panel start button',async()=>{
+    const f=fixture();f.win.catalog={All:Array.from({length:10},(_,i)=>'x'+i)};f.win.SJTUCourseTimer=api;api.mount(f.win);const p=f.doc.getElementById('sjtu-course-timer').shadowRoot;
+    p.getElementById('queries').value='All';await p.getElementById('searchBtn').onclick();
+    for(let i=0;i<10;i++)p.querySelectorAll('#results button[data-add]')[i].click();
+    assert(p.getElementById('queue').children.length===10,'ten tasks not collected');
+    f.win.submitFlag='1';p.getElementById('dry').checked=false;
+    p.getElementById('start').value=new Date(Date.now()+28800000-1000).toISOString().slice(0,19);
+    p.getElementById('end').value=new Date(Date.now()+28800000+20000).toISOString().slice(0,19);
+    await p.getElementById('startBtn').onclick();
+    assert(f.effects.filter(e=>e[0]==='submit').length===10,'not all ten tasks submitted');assert(p.getElementById('status').textContent.includes('10/10'),'missing completion count');
+  });
+  await test('teacher-only search supports several names and stop restores editing controls',async()=>{
+    const f=fixture();f.win.SJTUCourseTimer=api;api.mount(f.win);const p=f.doc.getElementById('sjtu-course-timer').shadowRoot;
+    p.getElementById('teacherQuery').value='Teacher a,Teacher b';await p.getElementById('searchBtn').onclick();
+    assert(p.querySelectorAll('#results button[data-add]').length===2,'teacher-only query did not find both names');
+    f.win.noListResponse=true;p.getElementById('queries').value='CODEa';const searching=p.getElementById('searchBtn').onclick();
+    assert(p.getElementById('startBtn').disabled,'enrollment can race a search');p.getElementById('stop').click();await searching;
+    assert(!p.getElementById('searchBtn').disabled&&!p.getElementById('startBtn').disabled&&p.getElementById('stop').disabled,'search stop left controls locked');
+    assert(!f.effects.some(e=>e[0]==='submit'),'search triggered enrollment');
   });
   document.getElementById('results').textContent=JSON.stringify({passed:results.filter(x=>x.passed).length,total:results.length,results});
 })();

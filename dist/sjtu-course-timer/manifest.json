@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "交大选课定时助手（页面刷新版）",
-  "version": "0.4.0",
-  "description": "每轮输入课号并点击页面查询，更新余量后选课；全部成功或截止时结束。默认只读。",
+  "name": "交大选课定时助手（搜索任务版）",
+  "version": "0.5.0",
+  "description": "搜索课程与教师，点击加入最多10门课程任务，逐门刷新选课，支持同课程多个备选班。",
   "content_scripts": [{
     "matches": ["https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html*"],
     "js": ["course-timer.user.js"],
