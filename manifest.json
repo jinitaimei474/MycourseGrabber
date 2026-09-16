@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "交大选课定时助手（本地初版）",
-  "version": "0.1.0",
-  "description": "在已登录的自主选课页中定时检查指定教学班。默认只读。",
+  "name": "交大选课定时助手（并发检查版）",
+  "version": "0.3.0",
+  "description": "并发检查多门课程余量，逐笔核对提交；全部成功或截止时结束。默认只读。",
   "content_scripts": [{
     "matches": ["https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html*"],
     "js": ["course-timer.user.js"],

@@ -1,7 +1,7 @@
 {
   "name": "sjtu-course-timer",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
-  "scripts": { "test": "node --test", "check": "node --check course-timer.user.js" },
+  "scripts": { "test": "node --test test/core.test.cjs", "check": "node --check course-timer.user.js" },
   "engines": { "node": ">=18" }
 }
