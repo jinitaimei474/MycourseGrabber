@@ -9,9 +9,7 @@ const config=extra=>({startAt:10000,endAt:40000,intervalMs:5000,targets:[a,b],dr
 function harness(states={},outcomes={}) {
   let time=0;const effects=[],reads={},writes={};
   const env={now:()=>time,sleep:async ms=>{time+=ms;}};
-  const probeReads={};
   const adapter={inspect:t=>({state:'available',...t}),prepare:async t=>{effects.push(['prepare',t.jxbId,time]);},
-    probe:async t=>{const id=t.jxbId;effects.push(['probe',id,time]);const list=states[id]||['available'];const n=probeReads[id]||0;probeReads[id]=n+1;return {state:list[Math.min(n,list.length-1)]};},
     refresh:async t=>{const id=t.jxbId;effects.push(['refresh',id,time]);const list=states[id]||['available'];const n=reads[id]||0;reads[id]=n+1;return {state:list[Math.min(n,list.length-1)]};},
     submit:async t=>{const id=t.jxbId;effects.push(['submit',id,time]);const list=outcomes[id]||['success'];const n=writes[id]||0;writes[id]=n+1;return {state:list[Math.min(n,list.length-1)]};}};
   return {env,adapter,effects,writes};
@@ -34,26 +32,23 @@ test('default dry run checks all targets without waiting or network',async()=>{
 test('each round checks every course without a per-course sleep and skips successful ones',async()=>{
   const h=harness({a:['full','available']});const r=await core.run(config(),h.adapter,h.env);
   assert.equal(r.state,'success');assert.deepEqual(h.writes,{b:1,a:1});
-  assert.deepEqual(h.effects.filter(x=>x[0]==='probe'),[['probe','a',10000],['probe','b',10000],['probe','a',15000],['probe','a',20000]]);
+  assert.deepEqual(h.effects.filter(x=>x[0]==='prepare'),[['prepare','a',10000],['prepare','b',10000],['prepare','a',15000]]);
 });
-test('available course submits while another course query is still unresolved',async()=>{
-  const h=harness();let releaseA;const pendingA=new Promise(resolve=>{releaseA=resolve;});
-  h.adapter.probe=t=>t===a?pendingA:Promise.resolve({state:'available'});
-  const submit=h.adapter.submit;h.adapter.submit=async t=>{const result=await submit(t);if(t===b)releaseA({state:'available'});return result;};
-  const r=await Promise.race([core.run(config(),h.adapter,h.env),new Promise((_,reject)=>{const timer=setTimeout(()=>reject(new Error('slow course blocked other submissions')),1000);timer.unref();})]);
-  assert.equal(r.state,'success');assert.deepEqual(h.effects.filter(x=>x[0]==='submit').map(x=>x[1]),['b','a']);
+test('full courses still search and refresh on every round',async()=>{
+  const h=harness({a:['full']});await core.run(config({targets:[a],endAt:20000}),h.adapter,h.env);
+  assert.deepEqual(h.effects,[['prepare','a',10000],['refresh','a',10000],['prepare','a',15000],['refresh','a',15000]]);
+  assert.deepEqual(h.writes,{});
 });
-test('parallel probes are bounded and never overlap page submission operations',async()=>{
-  const h=harness();let queries=0,maxQueries=0,pageOps=0,maxPageOps=0;
-  h.adapter.probe=async()=>{queries++;maxQueries=Math.max(maxQueries,queries);await new Promise(resolve=>setTimeout(resolve,5));queries--;return {state:'available'};};
+test('page query and submission operations never overlap across courses',async()=>{
+  const h=harness();let pageOps=0,maxPageOps=0;
   h.adapter.prepare=async()=>{pageOps++;maxPageOps=Math.max(maxPageOps,pageOps);await new Promise(resolve=>setTimeout(resolve,5));};
   const submit=h.adapter.submit;h.adapter.submit=async t=>{const result=await submit(t);pageOps--;return result;};
   const targets=Array.from({length:7},(_,i)=>({jxbId:String(i),kchId:'c'+i}));
   assert.equal((await core.run(config({targets}),h.adapter,h.env)).state,'success');
-  assert.ok(maxQueries>1&&maxQueries<=4);assert.equal(maxPageOps,1);assert.equal(Object.keys(h.writes).length,7);
+  assert.equal(maxPageOps,1);assert.equal(Object.keys(h.writes).length,7);
 });
-test('one rejected probe does not suppress another course and cannot cause a blind submit',async()=>{
-  const h=harness();h.adapter.probe=async t=>{if(t===a)throw new Error('network');return {state:'available'};};
+test('one rejected search does not suppress another course and cannot cause a blind submit',async()=>{
+  const h=harness();h.adapter.prepare=async t=>{if(t===a)throw new Error('network');};
   const r=await core.run(config(),h.adapter,h.env);assert.equal(r.state,'expired');assert.deepEqual(h.writes,{b:1});assert.equal(r.courses[0].state,'waiting');
 });
 test('queued courses recheck deadline and refresh before submitting',async()=>{

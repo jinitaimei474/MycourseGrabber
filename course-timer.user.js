@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         交大选课定时助手（多课程版）
+// @name         交大选课定时助手（页面刷新版）
 // @namespace    local.sjtu.course-timer
-// @version      0.3.0
-// @description  并发检查多课程余量，逐笔核对选课，全部成功或到设定结束时间时结束。
+// @version      0.4.0
+// @description  每轮输入课号并点击页面查询，更新教学班余量后选课，全部成功或截止时结束。
 // @match        https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html*
 // @grant        none
 // @run-at       document-idle
@@ -18,6 +18,7 @@
   'use strict';
   const SAVE_PATH = '/xsxk/zzxkyzbjk_xkBcZyZzxkYzb.html';
   const REFRESH_PATH = '/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html';
+  const LIST_PATH = '/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html';
   function parseBeijing(value) {
     const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
     if (!m) throw new Error('请填写完整的北京时间');
@@ -83,15 +84,18 @@
       else { item.state = 'waiting'; item.message = state === 'full' ? '满员，继续等待名额' : '暂不可选，等待页面状态恢复'; }
     };
     async function select(item) {
-      item.state = 'waiting';
+      item.state = 'checking';
       if (env.signal?.aborted || now() >= c.endAt) { item.message = '已停止或到达结束时间，未提交'; update(); return; }
-      item.message = '正在核对教学班，提交前再次刷新'; update();
+      item.message = `正在页面输入课号 ${item.target.keyword || ''} 并点击查询`; report(item.message); update();
       let submitting = false;
       try {
         await adapter.prepare(item.target, env.signal, c.endAt);
-        guard(); if (now() >= c.endAt) return;
-        let state = (await adapter.refresh(item.target, env.signal, c.endAt)).state;
-        guard(); if (now() >= c.endAt) return;
+        guard(); if (now() >= c.endAt) { item.state = 'waiting'; item.message = '已到结束时间，未提交'; return; }
+        const refreshed = await adapter.refresh(item.target, env.signal, c.endAt);
+        item.lastCheckedAt = now();
+        item.count = refreshed.count; item.capacity = refreshed.capacity;
+        let state = refreshed.state;
+        guard(); if (now() >= c.endAt) { item.state = 'waiting'; item.message = '已到结束时间，未提交'; return; }
         if (state === 'available') {
           submitting = true;
           report(`正在选择 ${item.target.className || item.target.jxbId}；若学校显示确认弹窗，请处理`);
@@ -115,30 +119,12 @@
         if (item.state === 'uncertain' && env.takeRetry?.(item.target)) { item.state = 'pending'; item.message = '已人工核对，允许重试'; }
       }
       const pending = matching(courses, item => item.state !== 'uncertain' && item.state !== 'success');
-      let cursor = 0, submissions = Promise.resolve();
-      report(`本轮并发检查 ${pending.length} 门课程（最多 4 个查询同时进行）`);
-      async function worker() {
-        while (cursor < pending.length && !env.signal?.aborted && now() < c.endAt) {
-          const item = pending[cursor++];
-          try {
-            item.attempts++; item.state = 'checking'; item.message = '正在向服务器查询余量'; update();
-            const found = await adapter.probe(item.target, env.signal, c.endAt);
-            if (env.signal?.aborted || now() >= c.endAt) { item.state = 'waiting'; item.message = '已停止或到达结束时间'; update(); return; }
-            if (found.count !== undefined) item.message = `已选/容量：${found.count}/${found.capacity}`;
-            if (found.state === 'available') {
-              item.state = 'queued'; item.message = `发现余量，等待页面核对后提交${found.count !== undefined ? `（${found.count}/${found.capacity}）` : ''}`;
-              // Only read-only queries overlap. Original website operations share
-              // DOM/global state and must own the page until their response arrives.
-              submissions = submissions.then(() => select(item));
-            } else setState(item, found.state);
-          } catch (error) {
-            item.state = 'waiting'; item.message = error.message;
-          }
-          update();
-        }
+      report(`本轮在页面查询 ${pending.length} 门课程`);
+      for (const item of pending) {
+        guard(); if (now() >= c.endAt) break;
+        item.attempts++;
+        await select(item);
       }
-      await Promise.all(Array.from({length: Math.min(4, pending.length)}, () => worker()));
-      await submissions;
       guard();
       update();
       if (allDone()) return result('success');
@@ -211,65 +197,6 @@
       if (signal?.aborted) throw new Error('已停止');
       if (Date.now() >= endAt) throw new Error('已到结束时间');
     }
-    function capture(target) {
-      inspect(target, false);
-      const heading = matching(doc.querySelectorAll('.panel-heading'), el => el.querySelector('input[name="kch_id"]')?.value === target.kchId)[0];
-      if (!heading || !$?.param) throw new Error('缺少课程查询参数，请重新查询后读取');
-      // Same payload as the captured school loadJxbxxZzxk implementation.
-      // Freeze the encoded payload now, before another course changes category.
-      const params = {...$('#searchBox').searchBox('getConditions')};
-      const fields = 'rwlx xkly bklx_id sfkkjyxdxnxq kzkcgs xqh_id jg_id zyh_id zyfx_id txbsfrl njdm_id bh_id xbm xslbdm mzm xz ccdm xsbj sfkknj gnjkxdnj sfkkzy kzybkxy sfznkx zdkxms sfkxq bhbcyxkjxb sfkcfx bbhzxjxb kkbk kkbkdj bklbkcj xkxnm xkxqm xkxskcgskg rlkz cdrlkz cxcykclxxskg rlzlkz kklxdm jxbzcxskg zxgbxkkg xklc xkkz_id'.split(' ');
-      for (const field of fields) params[field] = value(doc, field === 'jg_id' ? 'jg_id_1' : field);
-      params.kch_id = target.kchId;
-      params.cxbj = heading.querySelector('input[name="cxbj"]')?.value || '';
-      params.fxbj = heading.querySelector('input[name="fxbj"]')?.value || '';
-      return {...target, queryBody: $.param(params)};
-    }
-    async function probe(target, signal, endAt = Infinity) {
-      checkpoint(signal, endAt);
-      if (win.location.hostname !== 'i.sjtu.edu.cn' || value(doc, 'iskxk') !== '1') throw new Error('登录状态或选课时段无效，请检查页面');
-      if (context(doc).split('|').slice(0, 2).join('|') !== target.context.split('|').slice(0, 2).join('|')) throw new Error('学期已变化，请重新添加课程');
-      const params = new URLSearchParams(target.queryBody || '');
-      if (params.get('kch_id') !== target.kchId || ['xkxnm','xkxqm','xkkz_id','kklxdm','xklc'].map(key => params.get(key)).join('|') !== target.context) {
-        throw new Error('课程查询参数缺失或不匹配，请重新读取并添加课程');
-      }
-      const data = await new Promise((resolve, reject) => {
-        const xhr = new win.XMLHttpRequest();
-        let finished = false, timer;
-        const finish = (error, data) => {
-          if (finished) return; finished = true;
-          clearTimeout(timer); signal?.removeEventListener('abort', abort);
-          xhr.onload = xhr.onerror = xhr.onabort = xhr.ontimeout = null;
-          if (error) { xhr.abort(); reject(error); } else resolve(data);
-        };
-        const abort = () => finish(new Error('已停止'));
-        xhr.onload = () => {
-          try {
-            checkpoint(signal, endAt);
-            if (xhr.status !== 200) throw new Error(`余量查询失败（HTTP ${xhr.status}）`);
-            const data = JSON.parse(xhr.responseText);
-            if (!Array.isArray(data)) throw new Error('余量响应无效或登录已过期');
-            finish(null, data);
-          } catch (error) { finish(error); }
-        };
-        xhr.onerror = () => finish(new Error('余量查询网络异常，下一轮重试'));
-        xhr.onabort = () => finish(new Error('余量查询已取消'));
-        xhr.ontimeout = () => finish(new Error('余量查询超时，下一轮重试'));
-        signal?.addEventListener('abort', abort, {once:true});
-        timer = setTimeout(() => finish(new Error(Date.now() >= endAt ? '已到结束时间' : '余量查询超时，下一轮重试')), Math.min(15000, Math.max(0, endAt - Date.now())));
-        try {
-          checkpoint(signal, endAt);
-          xhr.open('POST', REFRESH_PATH, true);
-          xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-          xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-          xhr.send(target.queryBody);
-        } catch (error) { finish(error); }
-      });
-      const rows = matching(data, row => row && row.jxb_id === target.jxbId);
-      if (rows.length !== 1 || !/^\d+$/.test(String(rows[0].yxzrs)) || !/^\d+$/.test(String(rows[0].jxbrl))) throw new Error('响应中缺少目标教学班或有效人数，请核对课程');
-      const count = Number(rows[0].yxzrs), capacity = Number(rows[0].jxbrl);
-      return {state: capacity > count ? 'available' : 'full', count, capacity};
-    }
     async function waitUntil(predicate, signal, endAt) {
       const timeout = Date.now() + 15000;
       for (;;) {
@@ -283,6 +210,7 @@
     async function prepare(target, signal, endAt = Infinity) {
       checkpoint(signal, endAt);
       if (!$ || typeof win.loadJxbxxZzxk !== 'function') throw new Error('页面核心脚本未就绪');
+      if (win.location.hostname !== 'i.sjtu.edu.cn' || value(doc, 'iskxk') !== '1') throw new Error('登录状态或选课时段无效，请检查页面');
       const currentTerm = context(doc).split('|').slice(0, 2).join('|');
       if (currentTerm !== target.context.split('|').slice(0, 2).join('|')) throw new Error('学期已变化，请重新添加课程');
       await waitUntil(() => $.active === 0, signal, endAt);
@@ -296,14 +224,21 @@
         await sleep(250, signal);
         await waitUntil(() => $.active === 0 && context(doc) === target.context, signal, endAt);
       }
-      const hasRow = () => matching(doc.querySelectorAll('#contentBox tr.body_tr'), row => text(row, '.jxb_id') === target.jxbId).length === 1;
-      if (!hasRow()) {
-        const input = doc.querySelector('#searchBox input[name="searchInput"]');
-        const query = doc.querySelector('#searchBox button[name="query"]');
-        if (!input || !query || !target.keyword) throw new Error('缺少课程查询入口或课程号，请重新添加');
+      const getRow = () => matching(doc.querySelectorAll('#contentBox tr.body_tr'), row => text(row, '.jxb_id') === target.jxbId)[0];
+      const oldRow = getRow();
+      const input = doc.querySelector('#searchBox input[name="searchInput"]');
+      const query = doc.querySelector('#searchBox button[name="query"]');
+      if (!input || !query || !target.keyword) throw new Error('缺少课程查询入口或课程号，请重新添加');
+      if (query.disabled) throw new Error('页面查询按钮不可用，等待下一轮');
+      // Query every time, including when the old target row is still displayed.
+      // Require both its matching response and newly rendered DOM, never an old row.
+      const response = await observe(LIST_PATH, target, () => {
         checkpoint(signal, endAt); input.value = target.keyword; query.click();
-        await waitUntil(() => $.active === 0 && hasRow(), signal, endAt);
+      }, signal, endAt);
+      if (response.status !== 200 || !Array.isArray(response.data?.tmpList) || !matching(response.data.tmpList, row => row.jxb_id === target.jxbId && row.kch_id === target.kchId).length) {
+        throw new Error('页面查询失败或未返回目标教学班，本轮不选课；请检查登录及筛选条件');
       }
+      await waitUntil(() => $.active === 0 && getRow() && getRow() !== oldRow, signal, endAt);
       checkpoint(signal, endAt);
       inspect(target, false);
     }
@@ -323,7 +258,10 @@
         const listener = (_event, xhr, settings) => {
           if (new URL(settings.url, win.location.href).pathname !== path) return;
           const params = typeof settings.data === 'string' ? new URLSearchParams(settings.data) : new URLSearchParams(settings.data || {});
-          if (params.get('kch_id') !== target.kchId) return;
+          if (path === LIST_PATH) {
+            const parts = target.context.split('|');
+            if (params.get('filter_list[0]') !== target.keyword || params.get('kklxdm') !== parts[3] || params.get('xkkz_id') !== parts[2]) return;
+          } else if (params.get('kch_id') !== target.kchId) return;
           if (path === SAVE_PATH && (!expectedOperation || params.get('jxb_ids') !== expectedOperation)) return;
           let data = xhr.responseJSON;
           if (data === undefined) { try { data = JSON.parse(xhr.responseText); } catch {} }
@@ -349,8 +287,6 @@
     return {
       inspect,
       prepare,
-      capture,
-      probe,
       isSelected(target) {
         return context(doc).split('|').slice(0, 2).join('|') === target.context.split('|').slice(0, 2).join('|')
           && matching(doc.querySelectorAll('#choosedBox input[name="right_jxb_id"]'), el => el.value === target.jxbId).length > 0;
@@ -365,9 +301,15 @@
         if (response.status !== 200 || !Array.isArray(response.data) || !matching(response.data, row => row.jxb_id === target.jxbId).length) {
           throw new Error('余量响应无效或登录已过期，请重新查询');
         }
-        // The site's callback updates the DOM on its own 1 ms timer.
-        await sleep(50, signal);
+        // The original callback sets czzt=1 only after updating the row data.
+        await waitUntil(() => $.active === 0 && marker.value === '1' && marker.isConnected, signal, endAt);
         if (hasModal()) throw new Error('学校页面有弹窗，处理后自动继续');
+        if (heading.querySelector('.expand_close')?.classList.contains('expand1')) {
+          checkpoint(signal, endAt);
+          // With czzt=1 the original function only expands the updated rows;
+          // it does not send another request or change the selection.
+          win.loadJxbxxZzxk(heading);
+        }
         return inspect(target);
       },
       async submit(target, signal, endAt = Infinity) {
@@ -399,8 +341,8 @@
       #status{background:#f2f5f9;border-radius:6px;padding:10px;margin-top:12px;white-space:pre-wrap;max-height:120px;overflow:auto}
       #queue{max-height:200px;overflow:auto}.course{border:1px solid #d9dfe7;border-radius:6px;padding:8px;margin-top:6px;white-space:pre-wrap}.course p{margin:4px 0}.course button{font-size:12px;padding:3px 7px}
       header button{padding:0 7px;background:transparent;color:white;border-color:#ffffff70}input[type=checkbox]{vertical-align:middle}
-    </style><section><header><h2>交大选课定时助手 · 并发检查 v0.3</h2><button id="fold" type="button">收起</button></header><main>
-      <p>查询并展开课程后添加到任务，可换类别继续添加。后台可以运行，但休眠和计时限流可能延迟检查。</p>
+    </style><section><header><h2>交大选课定时助手 · 页面刷新 v0.4</h2><button id="fold" type="button">收起</button></header><main>
+      <p>每轮自动填课号并点击页面“查询”，更新余量后选课。多门课程依次处理；后台休眠和计时限流可能延迟检查。</p>
       <button id="scan" type="button">读取当前教学班</button>
       <label for="target">当前教学班（Ctrl / Shift 多选）</label><select id="target" multiple size="4"></select>
       <p id="detail"></p><button id="add" type="button">添加所选教学班到任务</button>
@@ -420,16 +362,20 @@
     const retries = new Set();
     const status = msg => { el('status').textContent = msg; };
     const states = { 'dry-run': '只读检查完成，未发出请求、未提交。', success: '所有目标课程已选上，请核对右侧已选列表。', expired: '已到结束时间，不再发起新选课操作；请核对任务列表和网站已选列表。' };
-    const labels = { available: '有余量', full: '已满', selected: '已选', blocked: '暂不可选', pending: '待开始', checking: '查询中', queued: '等待提交', waiting: '等待中', uncertain: '待人工核对', success: '已成功' };
+    const labels = { available: '有余量', full: '已满', selected: '已选', blocked: '暂不可选', pending: '待开始', checking: '查询中', waiting: '等待中', uncertain: '待人工核对', success: '已成功' };
     function renderQueue() {
       el('queue').replaceChildren();
       if (!queue.length) { el('queue').textContent = '尚未添加课程。'; return; }
       for (const target of queue) {
         const item = matching(progress, x => x.target.jxbId === target.jxbId)[0];
         const card = doc.createElement('div'); card.className = 'course';
-        const title = doc.createElement('strong'); title.textContent = `${target.className} ${target.teacher}`; card.appendChild(title);
+        const title = doc.createElement('strong'); title.textContent = `${target.keyword || ''} · ${target.className} ${target.teacher}`; card.appendChild(title);
         const msg = doc.createElement('p');
         msg.textContent = item ? `${labels[item.state]} · 已检查 ${item.attempts} 次\n${item.message}${item.inspection ? `；当前状态：${labels[item.inspection.state] || '待核对'}` : ''}` : `${target.time}\n尚未启动`;
+        if (item?.lastCheckedAt) {
+          msg.textContent += `\n上次页面刷新：${new Date(item.lastCheckedAt + 28800000).toISOString().slice(11, 19)}（北京时间）`;
+          if (item.count !== undefined && item.capacity !== undefined) msg.textContent += `；已选/容量：${item.count}/${item.capacity}`;
+        }
         card.appendChild(msg);
         if (!controller) {
           const remove = doc.createElement('button'); remove.textContent = '移除'; remove.onclick = () => { queue = matching(queue, x => x.jxbId !== target.jxbId); renderQueue(); }; card.appendChild(remove);
@@ -445,7 +391,7 @@
     el('end').value = new Date(Date.now() + 28800000 + 3600000).toISOString().slice(0, 19);
     el('fold').onclick = () => { const main = shadow.querySelector('main'); main.hidden = !main.hidden; el('fold').textContent = main.hidden ? '展开' : '收起'; };
     el('scan').onclick = () => {
-      try { targets = scan(doc).map(target => adapter.capture(target)); }
+      try { targets = scan(doc); }
       catch (error) { targets = []; el('target').replaceChildren(); status(error.message); return; }
       el('target').replaceChildren();
       for (const [index, t] of targets.entries()) el('target').add(new Option(`${t.className} ${t.teacher} [${t.count}/${t.capacity}]`, String(index)));
@@ -455,6 +401,7 @@
       const problems = [];
       for (const option of el('target').selectedOptions) {
         const target = targets[Number(option.value)];
+        if (!target.keyword) { problems.push(`${target.className}：未读取到课号，请展开课程后重新读取`); continue; }
         if (matching(queue, x => x.kchId === target.kchId).length) { problems.push(`${target.className}：该课程已经在任务中`); continue; }
         queue.push({...target});
       }

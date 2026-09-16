@@ -12,23 +12,17 @@
       <ul id="nav_tab"><li class="active"><a id="tab_kklx_a">A</a></li><li><a id="tab_kklx_b">B</a></li></ul>
       <div id="searchBox"><input name="searchInput"><button name="query">查询</button></div><div id="contentBox"></div><div id="choosedBox"></div>`;
     Object.defineProperty(doc,'visibilityState',{value:'hidden'});
-    const effects = [], events = new Map(), requests = [];
+    const effects = [], events = new Map();
     const jq = () => ({searchBox:()=>({searchInput:doc.querySelector('input[name="searchInput"]').value}),on:(event,fn)=>{if(!events.has(event))events.set(event,new Set());events.get(event).add(fn);},off:(event,fn)=>events.get(event)?.delete(fn)});
     jq.param = data => new URLSearchParams(data).toString();
     jq.active = 0;
     const win = {document:doc,jQuery:jq,location:{hostname:'i.sjtu.edu.cn',href:'https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html'},getComputedStyle:window.getComputedStyle.bind(window),addEventListener:window.addEventListener.bind(window)};
-    win.XMLHttpRequest = class {
-      open(method,url,async) { this.method=method;this.url=url;this.async=async; }
-      setRequestHeader() {}
-      send(body) { this.body=body;requests.push(this);this.timer=setTimeout(()=>{this.status=200;this.responseText=JSON.stringify(win.response ? win.response(this) : [{jxb_id:new URLSearchParams(body).get('kch_id').replace('course-',''),yxzrs:'10',jxbrl:'20'}]);this.onload();},win.queryDelay || 20); }
-      abort() { clearTimeout(this.timer);this.aborted=true;this.onabort?.(); }
-    };
-    function emit(path, data, body) {
-      for (const listener of [...(events.get('ajaxComplete')||[])]) listener({}, {status:200,responseJSON:body}, {url:path,data:new URLSearchParams(data).toString()});
+    function emit(path, data, body, status=200) {
+      for (const listener of [...(events.get('ajaxComplete')||[])]) listener({}, {status,responseJSON:body}, {url:path,data:new URLSearchParams(data).toString()});
     }
     function render(id, kch) {
-      doc.getElementById('contentBox').innerHTML = `<div class="panel-heading"><span id="kcmc_${kch}">(CODE${id})Course ${id}</span><input name="kch_id" value="${kch}"><input name="czzt" value="1"></div>
-        <table><tbody><tr class="body_tr"><td class="jxb_id">${id}</td><td class="kch_id">${kch}</td><td class="do_jxb_id">op-${id}</td><td class="jxbzls">1</td><td class="jxbmc">Class ${id}</td><td class="jsxmzc">Teacher ${id}</td><td class="sksj">Monday</td><td class="rsxx"><span class="jxbrs">10</span>/<span class="jxbrl">20</span></td><td class="an"><button onclick="chooseCourseZzxk()">选课</button></td></tr></tbody></table>`;
+      doc.getElementById('contentBox').innerHTML = `<div class="panel-heading"><span id="kcmc_${kch}">(CODE${id})Course ${id}</span><input name="kch_id" value="${kch}"><input name="czzt" value="1"><a class="expand_close expand1"></a></div>
+        <div class="panel-body" style="display:none"><table><tbody><tr class="body_tr"><td class="jxb_id">${id}</td><td class="kch_id">${kch}</td><td class="do_jxb_id">op-${id}</td><td class="jxbzls">1</td><td class="jxbmc">Class ${id}</td><td class="jsxmzc">Teacher ${id}</td><td class="sksj">Monday</td><td class="rsxx"><span class="jxbrs">10</span>/<span class="jxbrl">20</span></td><td class="an"><button onclick="chooseCourseZzxk()">选课</button></td></tr></tbody></table></div>`;
       const button=doc.querySelector('.an button');
       button.addEventListener('click',()=>{effects.push(['submit',id]);setTimeout(()=>{
         emit('/xsxk/zzxkyzbjk_xkBcZyZzxkYzb.html',{kch_id:kch,jxb_ids:'wrong-op'},{flag:'1'});
@@ -36,55 +30,90 @@
       },1);});
     }
     render('a','course-a');
+    function toggle(heading) {
+      const arrow=heading.querySelector('.expand_close');const collapsed=arrow.classList.contains('expand1');
+      arrow.className=collapsed?'expand_close close1':'expand_close expand1';heading.nextElementSibling.style.display=collapsed?'block':'none';
+    }
     win.loadJxbxxZzxk = heading => {const kch=heading.querySelector('input[name="kch_id"]').value;const id=doc.querySelector('.jxb_id').textContent;
-      effects.push(['refresh',id]);setTimeout(()=>emit('/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html',{kch_id:kch},[{jxb_id:id}]),1);};
+      if(heading.querySelector('input[name="czzt"]').value==='1'){toggle(heading);return;}
+      effects.push(['refresh',id]);setTimeout(()=>{
+        emit('/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html',{kch_id:kch},[{jxb_id:id}]);
+        setTimeout(()=>{toggle(heading);const counts=win.counts?.[id]||['10','20'];doc.querySelector('.jxbrs').textContent=counts[0];doc.querySelector('.jxbrl').textContent=counts[1];heading.querySelector('input[name="czzt"]').value='1';},win.renderDelay||1);
+      },1);};
     doc.getElementById('tab_kklx_b').addEventListener('click',()=>{
       effects.push(['category','b']);doc.getElementById('xkkz_id').value='control-b';doc.getElementById('kklxdm').value='10';
       doc.querySelector('#nav_tab li.active').classList.remove('active');doc.getElementById('tab_kklx_b').parentElement.classList.add('active');doc.getElementById('contentBox').replaceChildren();});
-    doc.querySelector('button[name="query"]').addEventListener('click',()=>{const keyword=doc.querySelector('input[name="searchInput"]').value;effects.push(['query',keyword]);const id=keyword==='CODEa'?'a':'b';render(id,'course-'+id);});
-    return {doc,win,effects,requests,render,emit,adapter:api.createAdapter(win),target:api.scan(doc)[0]};
+    doc.querySelector('button[name="query"]').addEventListener('click',()=>{
+      const keyword=doc.querySelector('input[name="searchInput"]').value;effects.push(['query',keyword]);const id=keyword==='CODEa'?'a':'b';
+      if(win.noListResponse)return;
+      jq.active++;
+      setTimeout(()=>{
+        if(!win.listFailure&&!win.keepOldRow){render(id,'course-'+id);if(win.autoExpand){const heading=doc.querySelector('.panel-heading');heading.querySelector('input[name="czzt"]').value='0';win.loadJxbxxZzxk(heading);}}
+        const params={'filter_list[0]':keyword,kklxdm:doc.getElementById('kklxdm').value,xkkz_id:doc.getElementById('xkkz_id').value};
+        emit('/xsxk/zzxkyzb_cxZzxkYzbPartDisplay.html',params,{tmpList:[{jxb_id:id,kch_id:'course-'+id}]},win.listFailure?500:200);
+        jq.active--;
+      },win.listDelay||20);
+    });
+    return {doc,win,effects,render,emit,adapter:api.createAdapter(win),target:api.scan(doc)[0]};
   }
-  await test('parallel server queries retain each captured category without changing the page',async()=>{
-    const f=fixture(),a=f.adapter.capture(f.target);
-    f.doc.getElementById('xkkz_id').value='control-b';f.doc.getElementById('kklxdm').value='10';f.render('b','course-b');
-    const b=f.adapter.capture(api.scan(f.doc)[0]);
-    const pa=f.adapter.probe(a),pb=f.adapter.probe(b);
-    assert(f.requests.length===2,'queries were not started concurrently');
-    const [ra,rb]=await Promise.all([pa,pb]);assert(ra.state==='available'&&rb.state==='available','wrong result');
-    const first=new URLSearchParams(f.requests[0].body),second=new URLSearchParams(f.requests[1].body);
-    assert(first.get('kch_id')==='course-a'&&first.get('xkkz_id')==='control-a'&&first.get('kklxdm')==='01','first query used second category');
-    assert(first.get('gnjkxdnj')==='0','grade restriction parameter was omitted');
-    assert(second.get('kch_id')==='course-b'&&second.get('xkkz_id')==='control-b'&&second.get('kklxdm')==='10','second query context lost');
-    assert(f.requests.every(x=>x.method==='POST'&&x.async===true&&x.url==='/xsxk/zzxkyzbjk_cxJxbWithKchZzxkYzb.html'),'wrong request contract');
-    assert(f.doc.querySelector('.jxb_id').textContent==='b'&&f.effects.length===0,'probe mutated website or submitted');
+  await test('every prepare enters course code and clicks query even when row already exists',async()=>{
+    const f=fixture();const original=f.doc.querySelector('.body_tr');
+    await f.adapter.prepare(f.target,undefined,Date.now()+1500);
+    assert(f.doc.querySelector('input[name="searchInput"]').value==='CODEa','course code not entered');
+    assert(f.doc.querySelector('.body_tr')!==original,'old row was reused');
+    await f.adapter.prepare(f.target,undefined,Date.now()+1500);
+    assert(JSON.stringify(f.effects)===JSON.stringify([['query','CODEa'],['query','CODEa']]),'query skipped on repeated check');
   });
-  await test('probe distinguishes full capacity and rejects absent or malformed class data',async()=>{
-    const f=fixture(),target=f.adapter.capture(f.target);
-    f.win.response=()=>[{jxb_id:'a',yxzrs:'20',jxbrl:'20'}];assert((await f.adapter.probe(target)).state==='full','full course was available');
-    for(const response of [[{jxb_id:'other',yxzrs:0,jxbrl:20}],[{jxb_id:'a',yxzrs:null,jxbrl:20}],'<html>login</html>']){
-      f.win.response=()=>response;let threw=false;try{await f.adapter.probe(target);}catch{threw=true;}assert(threw,'invalid query accepted');
-    }
+  await test('failed list query cannot use old available row to select',async()=>{
+    const f=fixture();f.win.listFailure=true;
+    const r=await api.run({targets:[f.target],startAt:Date.now()-1000,endAt:Date.now()+300,intervalMs:5000,dryRun:false},f.adapter);
+    assert(r.state==='expired'&&!f.effects.some(e=>e[0]==='submit'||e[0]==='refresh'),'stale row used after query failure');
+  });
+  await test('successful query response without a newly rendered row cannot use stale data',async()=>{
+    const f=fixture();f.win.keepOldRow=true;let message='';
+    try{await f.adapter.prepare(f.target,undefined,Date.now()+250);}catch(error){message=error.message;}
+    assert(message.includes('结束时间'),'old row accepted as new query result');
+  });
+  await test('query with no response honors deadline and never accepts existing row',async()=>{
+    const f=fixture();f.win.noListResponse=true;let message='';
+    try{await f.adapter.prepare(f.target,undefined,Date.now()+250);}catch(error){message=error.message;}
+    assert(message.includes('结束时间'),'query returned old row or ignored deadline');
+  });
+  await test('stop while querying prevents later refresh and submission',async()=>{
+    const f=fixture(),c=new AbortController();f.win.noListResponse=true;
+    const task=api.run({targets:[f.target],startAt:Date.now()-1000,endAt:Date.now()+2000,intervalMs:5000,dryRun:false},f.adapter,{signal:c.signal});
+    setTimeout(()=>c.abort(),50);let stopped=false;try{await task;}catch{stopped=true;}
+    assert(stopped&&JSON.stringify(f.effects)===JSON.stringify([['query','CODEa']]),'stop allowed further operations');
+  });
+  await test('refresh waits for rendered capacity instead of a fixed short delay',async()=>{
+    const f=fixture();f.win.renderDelay=250;f.win.counts={a:['20','20']};
+    assert((await f.adapter.refresh(f.target,undefined,Date.now()+1500)).state==='full','read old capacity before render completed');
+  });
+  await test('full course is visibly queried again and selected after a later release',async()=>{
+    const f=fixture();f.win.counts={a:['20','20']};f.win.submitFlag='1';let time=Date.now();
+    const r=await api.run({targets:[f.target],startAt:time-1000,endAt:time+20000,intervalMs:5000,dryRun:false},f.adapter,{now:()=>time,sleep:async ms=>{time+=ms;f.win.counts.a=['19','20'];}});
+    assert(r.state==='success','later release not selected');
+    assert(JSON.stringify(f.effects)===JSON.stringify([['query','CODEa'],['refresh','a'],['query','CODEa'],['refresh','a'],['submit','a']]),'missing visible query on a full course');
+    assert(r.courses[0].lastCheckedAt>0,'last refreshed time missing');
+  });
+  await test('target stays expanded after the original query auto-loads its classes',async()=>{
+    const f=fixture();f.win.autoExpand=true;
+    await f.adapter.prepare(f.target,undefined,Date.now()+1500);
+    await f.adapter.refresh(f.target,undefined,Date.now()+1500);
+    assert(f.doc.querySelector('.expand_close').classList.contains('close1')&&f.doc.querySelector('.panel-body').style.display==='block','refreshed rows ended collapsed');
+    assert(f.effects.filter(e=>e[0]==='refresh').length===2,'reopening sent another request');
   });
   await test('chosen list recognizes a saved class after switching categories',async()=>{
-    const f=fixture(),target=f.adapter.capture(f.target);f.doc.getElementById('kklxdm').value='10';f.render('b','course-b');
+    const f=fixture(),target=f.target;f.doc.getElementById('kklxdm').value='10';f.render('b','course-b');
     f.doc.getElementById('choosedBox').innerHTML='<input name="right_jxb_id" value="a">';
     assert(f.adapter.isSelected(target),'selected target not recognized outside current category');
     f.doc.getElementById('xkxnm').value='2027';assert(!f.adapter.isSelected(target),'selected status reused across terms');
   });
-  await test('stop and deadline abort outstanding probes and block new ones',async()=>{
-    const f=fixture(),target=f.adapter.capture(f.target);f.win.queryDelay=1000;
-    const controller=new AbortController(),pending=f.adapter.probe(target,controller.signal);controller.abort();
-    let stopped=false;try{await pending;}catch{stopped=true;}assert(stopped&&f.requests[0].aborted,'stop left request active');
-    let expired=false;try{await f.adapter.probe(target,undefined,Date.now()+100);}catch{expired=true;}
-    assert(expired&&f.requests[1].aborted,'deadline left request active');
-    let blocked=false;try{await f.adapter.probe(target,undefined,Date.now()-1);}catch{blocked=true;}
-    assert(blocked&&f.requests.length===2,'request started after end');
-  });
   await test('multiple courses complete in the first round with real adapter and fresh page checks',async()=>{
-    const f=fixture(),a=f.adapter.capture(f.target);f.render('b','course-b');const b=f.adapter.capture(api.scan(f.doc)[0]);f.render('a','course-a');f.win.submitFlag='1';
+    const f=fixture(),a=f.target;f.render('b','course-b');const b=api.scan(f.doc)[0];f.render('a','course-a');f.win.submitFlag='1';
     const result=await api.run({targets:[a,b],startAt:Date.now()-1000,endAt:Date.now()+3000,intervalMs:5000,dryRun:false},f.adapter);
     assert(result.state==='success'&&result.courses.every(item=>item.state==='success'),'both courses did not complete before per-course interval');
-    assert(f.requests.length===2,'did not probe both courses');
+    assert(JSON.stringify(f.effects.filter(e=>e[0]==='query'))===JSON.stringify([['query','CODEa'],['query','CODEb']]),'did not visibly query both courses');
     assert(JSON.stringify(f.effects.filter(e=>e[0]==='refresh'||e[0]==='submit'))===JSON.stringify([['refresh','a'],['submit','a'],['refresh','b'],['submit','b']]),'wrong course or missing pre-submit refresh');
   });
   await test('hidden page can refresh and submit only the intended teaching class',async()=>{
