@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         交大选课定时助手（搜索任务版）
 // @namespace    local.sjtu.course-timer
-// @version      0.5.0
+// @version      0.6.0
 // @description  搜索课程和教师，点击加入最多10门课程任务，每轮逐门刷新选课。
 // @match        https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html*
 // @grant        none
@@ -61,18 +61,57 @@
     if (!Number.isFinite(c.startAt) || !Number.isFinite(c.endAt) || c.endAt <= c.startAt) throw new Error('结束时间必须晚于开始时间');
     if (c.dryRun !== undefined && typeof c.dryRun !== 'boolean') throw new Error('只读模式必须是布尔值');
     if (!Number.isInteger(c.intervalMs) || c.intervalMs < 5000 || c.intervalMs > 60000) throw new Error('检查间隔须为 5–60 秒');
+    if (c.reloadEveryMs !== undefined && c.reloadEveryMs !== 0 && (!Number.isInteger(c.reloadEveryMs) || c.reloadEveryMs < 60000 || c.reloadEveryMs > 7200000)) throw new Error('整页刷新间隔须为 1–120 分钟，或设为 0 关闭');
   }
   function choices(target) { return target.candidates === undefined ? [target] : target.candidates; }
+  function createTaskStore(storage, owner) {
+    const key = 'sjtu-course-timer-task-v1';
+    const targetCopy = target => {
+      const copy = {};
+      for (const field of ['jxbId','kchId','className','teacher','time','course','keyword','tabId','context']) if (typeof target[field] === 'string') copy[field] = target[field];
+      return copy;
+    };
+    return {
+      save(snapshot) {
+        if (!owner || !storage) throw new Error('无法确认当前账户或保存任务，不能自动刷新');
+        const config = {};
+        for (const field of ['startAt','endAt','intervalMs','dryRun','reloadEveryMs']) config[field] = snapshot.config[field];
+        config.targets = snapshot.config.targets.map(target => ({...targetCopy(target), candidates:choices(target).map(targetCopy)}));
+        validate(config);
+        const courses = (snapshot.courses || []).map(item => ({state:['success','uncertain'].includes(item.state)?item.state:'pending',attempts:item.attempts || 0,message:item.message || ''}));
+        storage.setItem(key, JSON.stringify({version:1,owner,config,courses,autoResume:snapshot.autoResume === true,savedAt:Date.now()}));
+      },
+      read() {
+        try {
+          const saved = JSON.parse(storage?.getItem(key) || 'null');
+          if (!saved) return null;
+          if (saved.version !== 1 || !owner || saved.owner !== owner) { storage.removeItem(key); return null; }
+          validate(saved.config);
+          if (!Array.isArray(saved.courses) || saved.courses.length > saved.config.targets.length) throw new Error('任务记录无效');
+          return saved;
+        } catch { return null; }
+      },
+      clear() { storage?.removeItem(key); }
+    };
+  }
   async function run(c, adapter, env = {}) {
     validate(c);
     const now = env.now || Date.now;
     const pause = env.sleep || (ms => sleep(ms, env.signal));
     const guard = () => { if (env.signal?.aborted) throw new Error('已停止'); };
     const report = env.onStatus || (() => {});
-    const courses = c.targets.map(target => ({ target, state: 'pending', attempts: 0, message: '等待检查' }));
+    const courses = c.targets.map((target,index) => ({target,state:['success','uncertain'].includes(env.initialCourses?.[index]?.state)?env.initialCourses[index].state:'pending',attempts:env.initialCourses?.[index]?.attempts || 0,message:env.initialCourses?.[index]?.state==='uncertain'?'上次提交结果待核对，恢复后不自动重试':'等待检查'}));
     const update = () => env.onUpdate?.(courses.map(item => ({...item})));
     const allDone = () => matching(courses, item => item.state !== 'success').length === 0;
     const result = state => ({state, courses});
+    const reloadAt = now() + (c.reloadEveryMs || Infinity);
+    async function maybeReload() {
+      guard();
+      if (!c.reloadEveryMs || c.dryRun !== false || now() < reloadAt || now() >= c.endAt) return false;
+      if (!adapter.canReload?.()) { report('已到整页刷新时间，等待当前请求或确认弹窗处理完成'); return false; }
+      if (typeof env.reload !== 'function') throw new Error('自动刷新恢复入口不可用');
+      await env.reload({config:c,courses}); return true;
+    }
     guard();
     if (c.dryRun !== false) {
       for (const item of courses) {
@@ -83,6 +122,7 @@
     }
     while (now() < c.startAt) {
       guard(); report(`等待开始：还有 ${Math.ceil((c.startAt - now()) / 1000)} 秒`);
+      if (await maybeReload()) return result('reloading');
       await pause(Math.min(1000, c.startAt - now()));
     }
     guard();
@@ -106,6 +146,8 @@
           let state = refreshed.state;
           guard(); if (now() >= c.endAt) { item.state = 'waiting'; item.message = '已到结束时间，未提交'; return; }
           if (state === 'available') {
+            await env.beforeSubmit?.(item, courses);
+            guard(); if (now() >= c.endAt) return;
             submitting = true;
             report(`正在选择 ${target.className || target.jxbId}；若学校显示确认弹窗，请处理`);
             state = (await adapter.submit(target, env.signal, c.endAt)).state;
@@ -122,6 +164,7 @@
     while (now() < c.endAt) {
       guard();
       if (allDone()) return result('success');
+      if (await maybeReload()) return result('reloading');
       for (const item of courses) {
         if (item.state !== 'success') {
           for (const target of choices(item.target)) {
@@ -138,6 +181,7 @@
         guard(); if (now() >= c.endAt) break;
         item.attempts++;
         await select(item);
+        if (!allDone() && await maybeReload()) return result('reloading');
       }
       guard();
       update();
@@ -332,6 +376,7 @@
     return {
       inspect,
       prepare,
+      canReload() { return !!$ && $.active === 0 && !hasModal(); },
       async search(keyword, signal, endAt = Infinity) {
         keyword = clean(keyword).replace(/\s+/g, ' ');
         if (!keyword) throw new Error('请输入课程名称、课号或教师姓名');
@@ -397,7 +442,7 @@
       #teachers{max-height:95px;overflow:auto}#teachers label{display:inline-block;margin:3px 10px 3px 0;font-size:12px}
       #status{padding:10px;background:#f2f5f9;border-radius:6px;white-space:pre-wrap;margin-top:10px;max-height:130px;overflow:auto}
       header button{background:transparent;color:white;border-color:#ffffff70}input[type=checkbox]{vertical-align:middle}
-    </style><section><header><h2>交大选课助手 · 搜索任务 v0.5</h2><button id="fold">收起</button></header><main>
+    </style><section><header><h2>交大选课助手 · 长时任务 v0.6</h2><button id="fold">收起</button></header><main>
       <label for="queries">课程名称 / 课号（多个用逗号或换行分隔）</label>
       <textarea id="queries" rows="2" placeholder="例如：EE2905，电工学"></textarea>
       <label for="teacherQuery">教师姓名（可选，多人用逗号分隔）</label>
@@ -410,28 +455,37 @@
       <label for="start">开始时间（北京时间）</label><input id="start" type="datetime-local" step="1">
       <label for="end">结束时间（北京时间）</label><input id="end" type="datetime-local" step="1">
       <label>每轮完成后的等待间隔（秒）<input id="interval" type="number" min="5" max="60" value="5"></label>
+      <label>定时整页刷新（分钟，0 为关闭）<input id="reloadMinutes" type="number" min="0" max="120" value="0"></label>
+      <p id="reloadHint"></p>
       <label><input id="dry" type="checkbox" checked> 仅检查任务，不刷新、不提交选课</label>
       <div class="row"><button id="startBtn" class="primary">检查全部任务</button><button id="stop" disabled>停止</button></div>
       <div id="status" role="status">尚未启动。先查询并将教学班加入任务列表。</div>
-      <p>启动后按任务顺序，逐门填课号、点击原网页查询、更新余量并选课。全部成功或到结束时间终止。满员继续等待；确认弹窗需你处理。刷新或关闭网页会清空任务。</p>
+      <p>逐门查询和选课，全部成功或到结束时间终止。确认弹窗需你处理。扩展定时整页刷新前会保存任务并自动恢复；若跳到登录页，请手动登录。关闭标签页会丢失本标签页的任务备份。</p>
     </main></section>`;
     doc.body.appendChild(host);
     const el = id => shadow.getElementById(id), adapter = createAdapter(win);
     let targets = [], queue = [], progress = [], controller = null;
+    let taskStore = null, reloading = false, bootTimer = null;
+    const remembered = new Map();
+    const taskKey = target => `${String(target.context || '').split('|').slice(0,2).join('|')}|${target.kchId}`;
+    const remember = items => { for (const item of items) remembered.set(taskKey(item.target), {state:item.state || 'pending',attempts:item.attempts || 0,message:item.message || '等待检查'}); };
+    try { const owner = value(doc,'xh_id') || value(doc,'xh'); if (owner && win.sessionStorage) taskStore = createTaskStore(win.sessionStorage,owner); } catch {}
+    const autoLoad = win.__SJTUCourseTimerAutoLoad === true && !!taskStore;
     let selectedTeachers = new Set();
     const retries = new Set();
     const status = message => { el('status').textContent = message; };
     const terms = raw => [...new Set(matching(String(raw).split(/[\n,，;；]+/).map(clean), word => !!word))];
-    const controls = ['queries','teacherQuery','searchBtn','scan','start','end','interval','dry','startBtn'];
+    const controls = ['queries','teacherQuery','searchBtn','scan','start','end','interval','reloadMinutes','dry','startBtn'];
     const labels = {available:'有余量',full:'已满',selected:'已选',blocked:'待核对',pending:'待开始',checking:'查询中',waiting:'等待中',uncertain:'待人工核对',success:'已成功'};
     function busy() {
-      for (const id of controls) el(id).disabled = !!controller;
-      el('stop').disabled = !controller;
-      for (const input of el('teachers').querySelectorAll('input')) input.disabled = !!controller;
+      for (const id of controls) el(id).disabled = !!controller || bootTimer !== null;
+      el('reloadMinutes').disabled = !autoLoad || !!controller || bootTimer !== null;
+      el('stop').disabled = !controller && bootTimer === null;
+      for (const input of el('teachers').querySelectorAll('input')) input.disabled = !!controller || bootTimer !== null;
       renderQueue(); renderResults();
     }
     function add(target) {
-      if (controller) return;
+      if (controller || bootTimer !== null) return;
       if (!target.keyword) { status('没有读取到课号，请展开原网页课程后重新读取。'); return; }
       let group = matching(queue, item => item.kchId === target.kchId)[0];
       if (group && choices(group)[0].context.split('|').slice(0,2).join('|') !== target.context.split('|').slice(0,2).join('|')) { status('不能把不同学期的教学班加入同一任务。'); return; }
@@ -452,7 +506,7 @@
         const title = doc.createElement('strong'); title.textContent = `${target.course}\n${target.className}`;
         const detail = doc.createElement('p'); detail.textContent = `${target.teacher || '教师待加载'}\n${target.time}\n已选/容量：${target.count || '?'}/${target.capacity || '?'} · ${labels[target.state] || '待核对'}`;
         const button = doc.createElement('button'); button.dataset.add = target.jxbId; button.textContent = added ? '已加入' : '加入任务';
-        button.disabled = !!controller || !!added || (!group && queue.length >= 10); button.onclick = () => add(target);
+        button.disabled = !!controller || bootTimer !== null || !!added || (!group && queue.length >= 10); button.onclick = () => add(target);
         card.append(title,detail,button); el('results').appendChild(card);
       }
     }
@@ -462,7 +516,7 @@
       targets = [...unique.values()]; selectedTeachers = new Set(targets.map(item => item.teacher || '教师待加载'));
       el('teachers').replaceChildren();
       for (const teacher of selectedTeachers) {
-        const label = doc.createElement('label'), checkbox = doc.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.disabled = !!controller;
+        const label = doc.createElement('label'), checkbox = doc.createElement('input'); checkbox.type = 'checkbox'; checkbox.checked = true; checkbox.disabled = !!controller || bootTimer !== null;
         checkbox.onchange = () => { if (checkbox.checked) selectedTeachers.add(teacher); else selectedTeachers.delete(teacher); renderResults(); };
         label.append(checkbox,doc.createTextNode(teacher)); el('teachers').appendChild(label);
       }
@@ -477,9 +531,9 @@
         const title = doc.createElement('strong'); title.textContent = `${group.course || group.keyword} · ${choices(group).length} 个备选班`; card.appendChild(title);
         for (const target of choices(group)) {
           const line = doc.createElement('p'); line.textContent = `${target.className} ${target.teacher}\n${target.time} `;
-          const remove = doc.createElement('button'); remove.dataset.remove = target.jxbId; remove.textContent = '移除'; remove.disabled = !!controller;
+          const remove = doc.createElement('button'); remove.dataset.remove = target.jxbId; remove.textContent = '移除'; remove.disabled = !!controller || bootTimer !== null;
           remove.onclick = () => {
-            if (controller) return;
+            if (controller || bootTimer !== null) return;
             const remaining = matching(group.candidates, x => x.jxbId !== target.jxbId);
             queue = remaining.length ? queue.map(x => x === group ? {...remaining[0],candidates:remaining} : x) : matching(queue, x => x !== group);
             progress = []; renderQueue(); renderResults();
@@ -499,10 +553,12 @@
     }
     el('start').value = new Date(Date.now()+28800000+60000).toISOString().slice(0,19);
     el('end').value = new Date(Date.now()+28800000+3600000).toISOString().slice(0,19);
+    el('reloadMinutes').value = autoLoad ? '60' : '0';
+    el('reloadHint').textContent = autoLoad ? '默认 60 分钟是针对“约两小时过期”的预防设置，并非学校公布的有效期。刷新会保存并恢复任务；不能保证延长服务器登录期限。' : '自动整页刷新需安装/更新本地扩展。仅控制台粘贴的脚本刷新后会消失，因此此模式不启用自动刷新。';
     el('fold').onclick = () => { const main=shadow.querySelector('main'); main.hidden=!main.hidden; el('fold').textContent=main.hidden?'展开':'收起'; };
-    el('scan').onclick = () => { if (controller) return; setResults(scan(doc)); status('已读取当前页面；已有任务保留。'); };
+    el('scan').onclick = () => { if (controller || bootTimer !== null) return; setResults(scan(doc)); status('已读取当前页面；已有任务保留。'); };
     el('searchBtn').onclick = async () => {
-      if (controller) return;
+      if (controller || bootTimer !== null) return;
       const teachers = terms(el('teacherQuery').value), inputTerms = terms(el('queries').value), keywords = inputTerms.length ? inputTerms : teachers;
       if (!keywords.length) { status('请输入课程名称、课号或教师姓名。'); return; }
       if (keywords.length > 20) { status('单次最多输入 20 个查询词，请分批查询。'); return; }
@@ -522,22 +578,55 @@
       } finally { controller=null; busy(); }
     };
     el('dry').onchange = () => { el('startBtn').textContent=el('dry').checked?'检查全部任务':'启动全部任务'; };
-    el('stop').onclick = () => controller?.abort(); win.SJTUCourseTimer.stop = () => controller?.abort();
+    const stop = () => { if (bootTimer !== null) { clearTimeout(bootTimer); bootTimer=null; status('已取消自动恢复，可核对任务后手动启动。'); busy(); } controller?.abort(); };
+    el('stop').onclick = stop; win.SJTUCourseTimer.stop = stop;
     el('startBtn').onclick = async () => {
-      if (controller) return;
+      if (controller || bootTimer !== null) return;
       try {
-        const config={targets:queue.map(group=>({...group,candidates:group.candidates.slice()})),startAt:parseBeijing(el('start').value),endAt:parseBeijing(el('end').value),intervalMs:Number(el('interval').value)*1000,dryRun:el('dry').checked};
+        const config={targets:queue.map(group=>({...group,candidates:group.candidates.slice()})),startAt:parseBeijing(el('start').value),endAt:parseBeijing(el('end').value),intervalMs:Number(el('interval').value)*1000,dryRun:el('dry').checked,reloadEveryMs:Number(el('reloadMinutes').value)*60000};
         validate(config); if (!config.dryRun && config.endAt<=Date.now()) throw new Error('结束时间已经过去，请重新设置');
+        if (config.reloadEveryMs && !autoLoad) throw new Error('定时整页刷新需要扩展自动加载和可用的任务存储');
+        const initialCourses = config.targets.map(target=>remembered.get(taskKey(target)) || {state:'pending',attempts:0}); reloading = false;
+        if (!config.dryRun && config.reloadEveryMs) taskStore.save({config,courses:initialCourses || [],autoResume:false});
         controller=new AbortController(); retries.clear(); progress=[]; busy();
-        const result=await run(config,adapter,{signal:controller.signal,onStatus:status,onUpdate:items=>{progress=items;renderQueue();},takeRetry:target=>retries.delete(target.kchId)});
+        const result=await run(config,adapter,{signal:controller.signal,initialCourses,onStatus:status,
+          onUpdate:items=>{remember(items);progress=items;renderQueue();if (!config.dryRun && config.reloadEveryMs && !reloading) taskStore.save({config,courses:items,autoResume:false});},
+          beforeSubmit:(item,items)=>{if (config.reloadEveryMs) taskStore.save({config,courses:items.map(current=>current===item?{...current,state:'uncertain'}:current),autoResume:false});},
+          reload:snapshot=>{taskStore.save({...snapshot,autoResume:true});reloading=true;status('任务已保存，正在整页刷新；扩展加载后将恢复任务。');win.location.reload();},
+          takeRetry:target=>retries.delete(target.kchId)});
         progress=result.courses;
-        const messages={'dry-run':'只读检查完成，未发出请求、未提交。',success:'全部课程已成功，请核对网站已选列表。',expired:'已到结束时间，请核对网站已选列表。'};
+        const messages={'dry-run':'只读检查完成，未发出请求、未提交。',success:'全部课程已成功，请核对网站已选列表。',expired:'已到结束时间，请核对网站已选列表。',reloading:'已保存任务，等待整页刷新和自动恢复。'};
         status(`${messages[result.state] || result.state}\n已成功 ${matching(progress,x=>x.state==='success').length}/${queue.length} 门。`);
       } catch(error) { status(error.message); }
       finally { controller=null; busy(); }
     };
-    win.addEventListener('pagehide',()=>controller?.abort()); renderQueue();
+    win.addEventListener('pagehide',()=>controller?.abort());
+    const saved = taskStore?.read();
+    if (saved) {
+      queue = saved.config.targets;
+      remember(queue.map((target,index)=>({target,...saved.courses[index]})));
+      progress=queue.map(target=>({target,...remembered.get(taskKey(target))}));
+      for (const id of ['start','end']) el(id).value=new Date(saved.config[id+'At']+28800000).toISOString().slice(0,19);
+      el('interval').value=String(saved.config.intervalMs/1000);el('reloadMinutes').value=autoLoad?String((saved.config.reloadEveryMs || 0)/60000):'0';
+      el('dry').checked=saved.config.dryRun;el('dry').onchange();
+      let canResume = true;
+      try { taskStore.save({...saved,autoResume:false}); status('已恢复本标签页的任务，请核对后启动。'); }
+      catch (error) { canResume = false; status(`任务已恢复，但无法保存任务：${error.message}。已取消自动启动。`); }
+      if (canResume && autoLoad && saved.autoResume && !saved.config.dryRun && saved.config.endAt>Date.now()) {
+        status('定时刷新后正在等待选课页面加载，随后自动恢复；可点击停止取消。');
+        const until=Date.now()+30000;
+        const resume = () => {
+          bootTimer=null;
+          if (saved.config.endAt<=Date.now()) { status('已到结束时间，未自动恢复选课。'); busy(); return; }
+          if ((saved.config.startAt>Date.now() || value(doc,'iskxk')==='1') && typeof win.loadJxbxxZzxk==='function' && adapter.canReload()) { busy(); el('startBtn').onclick(); }
+          else if (Date.now()<until) { bootTimer=setTimeout(resume,250); busy(); }
+          else { status('页面未就绪或需要重新登录。任务已保留，请登录并核对后手动启动。'); busy(); }
+        };
+        bootTimer=setTimeout(resume,1000);
+      }
+    }
+    busy();
   }
 
-  return { parseBeijing, classifyResponse, run, scan, createAdapter, mount };
+  return { parseBeijing, classifyResponse, run, scan, createAdapter, createTaskStore, mount };
 });

@@ -232,5 +232,93 @@
     assert(!p.getElementById('searchBtn').disabled&&!p.getElementById('startBtn').disabled&&p.getElementById('stop').disabled,'search stop left controls locked');
     assert(!f.effects.some(e=>e[0]==='submit'),'search triggered enrollment');
   });
+  function extensionFixture(storage) {
+    const f=fixture(), entries=new Map();
+    f.win.sessionStorage=storage || {getItem:key=>entries.get(key)||null,setItem:(key,value)=>entries.set(key,value),removeItem:key=>entries.delete(key)};
+    const owner=f.doc.createElement('input');owner.id='xh_id';owner.value='offline-student';f.doc.body.appendChild(owner);
+    f.win.__SJTUCourseTimerAutoLoad=true;f.win.SJTUCourseTimer=api;
+    f.win.location.reload=()=>f.effects.push(['reload']);
+    f.store=api.createTaskStore(f.win.sessionStorage,'offline-student');
+    f.config={targets:[f.target],startAt:Date.now()-1000,endAt:Date.now()+20000,intervalMs:5000,dryRun:false,reloadEveryMs:60000};
+    return f;
+  }
+  function mountPanel(f) { api.mount(f.win);return f.doc.getElementById('sjtu-course-timer').shadowRoot; }
+  async function until(predicate,ms=3500) {
+    const end=Date.now()+ms;while(!predicate()&&Date.now()<end)await new Promise(resolve=>setTimeout(resolve,25));
+    assert(predicate(),'timed out waiting for panel');
+  }
+  await test('extension enables hourly reload while console mode disables it',async()=>{
+    const f=extensionFixture(),p=mountPanel(f);
+    assert(p.getElementById('reloadMinutes').value==='60'&&!p.getElementById('reloadMinutes').disabled,'extension default missing');
+    const c=fixture();c.win.SJTUCourseTimer=api;const q=mountPanel(c);
+    assert(q.getElementById('reloadMinutes').value==='0'&&q.getElementById('reloadMinutes').disabled,'console would erase itself');
+    q.getElementById('scan').click();q.querySelector('[data-add]').click();q.getElementById('reloadMinutes').value='1';
+    await q.getElementById('startBtn').onclick();
+    assert(q.getElementById('status').textContent.includes('需要扩展')&&c.effects.length===0,'console accepted reload');
+  });
+  await test('reload is deferred for requests and visible school dialogs',async()=>{
+    const f=fixture();assert(f.adapter.canReload(),'idle page blocked');f.win.jQuery.active=1;assert(!f.adapter.canReload(),'request interrupted');f.win.jQuery.active=0;
+    const modal=f.doc.createElement('div');modal.className='modal';modal.getClientRects=()=>[{}];f.doc.body.appendChild(modal);f.win.getComputedStyle=()=>({display:'block'});
+    assert(!f.adapter.canReload(),'dialog interrupted');modal.remove();assert(f.adapter.canReload(),'closed dialog still blocks');
+  });
+  await test('scheduled navigation restores tasks and deadline without repeating a successful course',async()=>{
+    const f=extensionFixture();f.render('b','course-b');const b=api.scan(f.doc)[0];f.config.targets.push(b);f.render('a','course-a');f.win.submitFlag='1';
+    f.store.save({config:f.config,courses:[{state:'success',attempts:2},{state:'pending',attempts:3}],autoResume:true});
+    const p=mountPanel(f);
+    assert([...p.querySelectorAll('[data-remove]')].every(button=>button.disabled),'queue editable during automatic restore');
+    await until(()=>p.getElementById('status').textContent.includes('全部课程已成功'));
+    assert(JSON.stringify(f.effects.filter(e=>e[0]==='submit'))===JSON.stringify([['submit','b']]),'successful course submitted again');
+    const saved=f.store.read();assert(saved.config.endAt===api.parseBeijing(p.getElementById('end').value)&&Math.abs(saved.config.endAt-f.config.endAt)<1000,'deadline changed');
+    assert(!saved.autoResume&&saved.courses.every(item=>item.state==='success'),'resume marker not consumed or success lost');
+  });
+  await test('submit checkpoint is uncertain before any enrollment click and clears after success',async()=>{
+    const f=extensionFixture();f.win.submitFlag='1';f.store.save({config:f.config,courses:[],autoResume:false});
+    let checkpoint=false;f.doc.addEventListener('click',event=>{if(event.target.closest('.an button'))checkpoint=f.store.read().courses[0].state==='uncertain';},true);
+    const p=mountPanel(f);await p.getElementById('startBtn').onclick();
+    assert(checkpoint&&f.store.read().courses[0].state==='success','submission window can be retried after reload');
+  });
+  await test('uncertain restored course does not submit and stop cancels pending auto restore',async()=>{
+    const f=extensionFixture();f.store.save({config:f.config,courses:[{state:'uncertain',attempts:1}],autoResume:true});const p=mountPanel(f);
+    await until(()=>p.getElementById('status').textContent.includes('继续等待'));assert(p.getElementById('queue').textContent.includes('待人工核对'),'uncertain status lost');p.getElementById('stop').click();
+    await until(()=>!p.getElementById('startBtn').disabled);assert(f.effects.length===0,'unknown result submitted again');
+    const c=extensionFixture();c.store.save({config:c.config,courses:[],autoResume:true});const q=mountPanel(c);q.getElementById('stop').click();
+    await new Promise(resolve=>setTimeout(resolve,1100));assert(c.effects.length===0&&!q.getElementById('startBtn').disabled,'stop did not cancel resume');
+  });
+  await test('expired and other-account backups never auto start',async()=>{
+    const f=extensionFixture();f.config.startAt=Date.now()-10000;f.config.endAt=Date.now()-1000;f.store.save({config:f.config,courses:[],autoResume:true});const p=mountPanel(f);
+    assert(p.getElementById('queue').children.length===1&&!p.getElementById('startBtn').disabled,'expired tasks lost or auto scheduled');
+    const c=extensionFixture(f.win.sessionStorage);c.doc.getElementById('xh_id').value='different-student';const q=mountPanel(c);
+    assert(q.getElementById('queue').children.length===0,'other account tasks restored');
+    await new Promise(resolve=>setTimeout(resolve,1100));assert(f.effects.length===0&&c.effects.length===0,'invalid resume produced requests');
+  });
+  await test('storage failure prevents automatic restore without breaking the panel',async()=>{
+    const f=extensionFixture();f.store.save({config:f.config,courses:[],autoResume:true});f.win.sessionStorage.setItem=()=>{throw new Error('storage unavailable');};
+    const p=mountPanel(f);assert(p.getElementById('queue').children.length===1&&!p.getElementById('startBtn').disabled,'panel lost after storage failure');
+    await p.getElementById('startBtn').onclick();assert(f.effects.length===0&&p.getElementById('status').textContent.includes('storage unavailable'),'unsafe run with failed storage');
+  });
+  await test('read-only checks and queue edits preserve another course uncertain state across starts',async()=>{
+    const f=extensionFixture();f.store.save({config:f.config,courses:[{state:'uncertain',attempts:1}],autoResume:false});const p=mountPanel(f);
+    p.getElementById('dry').checked=true;await p.getElementById('startBtn').onclick();
+    f.render('b','course-b');p.getElementById('scan').click();p.querySelector('[data-add]').click();
+    p.querySelector('[data-remove="b"]').click();
+    for(let i=0;i<2;i++){
+      p.getElementById('dry').checked=false;const running=p.getElementById('startBtn').onclick();
+      await until(()=>p.getElementById('status').textContent.includes('继续等待'));assert(p.getElementById('queue').textContent.includes('待人工核对'),'uncertain status lost');p.getElementById('stop').click();await running;
+    }
+    assert(f.effects.length===0,'restored uncertain course was retried without acknowledgement');
+  });
+  await test('storage failure followed by retry keeps uncertain courses protected',async()=>{
+    const f=extensionFixture();f.store.save({config:f.config,courses:[{state:'uncertain',attempts:1}],autoResume:false});const p=mountPanel(f);
+    const write=f.win.sessionStorage.setItem;f.win.sessionStorage.setItem=()=>{throw new Error('storage unavailable');};
+    await p.getElementById('startBtn').onclick();f.win.sessionStorage.setItem=write;
+    const running=p.getElementById('startBtn').onclick();await until(()=>p.getElementById('status').textContent.includes('继续等待'));assert(p.getElementById('queue').textContent.includes('待人工核对'),'uncertain status lost');p.getElementById('stop').click();await running;
+    assert(f.effects.length===0,'storage failure cleared uncertainty protection');
+  });
+  await test('scheduled reload resumes waiting for a future start even before selection opens',async()=>{
+    const f=extensionFixture();f.config.startAt=Date.now()+60000;f.config.endAt=Date.now()+120000;f.doc.getElementById('iskxk').value='0';
+    f.store.save({config:f.config,courses:[],autoResume:true});const p=mountPanel(f);
+    await until(()=>p.getElementById('status').textContent.includes('等待开始'));
+    p.getElementById('stop').click();await until(()=>!p.getElementById('startBtn').disabled);assert(f.effects.length===0,'future task made premature requests');
+  });
   document.getElementById('results').textContent=JSON.stringify({passed:results.filter(x=>x.passed).length,total:results.length,results});
 })();

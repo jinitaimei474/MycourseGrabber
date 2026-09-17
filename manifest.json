@@ -1,12 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "交大选课定时助手（搜索任务版）",
-  "version": "0.5.0",
-  "description": "搜索课程与教师，点击加入最多10门课程任务，逐门刷新选课，支持同课程多个备选班。",
-  "content_scripts": [{
-    "matches": ["https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html*"],
-    "js": ["course-timer.user.js"],
-    "run_at": "document_idle",
-    "world": "MAIN"
-  }]
+  "name": "交大选课定时助手（长时任务版）",
+  "version": "0.6.0",
+  "description": "搜索并轮询最多10门课程，支持同课备选班、定时整页刷新与任务恢复。",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://i.sjtu.edu.cn/xsxk/zzxkyzb_cxZzxkYzbIndex.html*"
+      ],
+      "js": [
+        "extension-loader.js",
+        "course-timer.user.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ]
 }

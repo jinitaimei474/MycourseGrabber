@@ -140,3 +140,30 @@ test('legacy array/string overrides do not break scanning',()=>{
   const doc={getElementById:()=>null,querySelectorAll:s=>s==='#contentBox tr.body_tr'?[row]:[]};
   const items=realm.module.exports.scan(doc);assert.equal(items.length,1);assert.equal(items[0].className,'Class A');assert.equal(items[0].state,'available');
 });
+test('scheduled full reload occurs between course operations and ends the old runner',async()=>{
+  const h=harness({a:['full'],b:['full']});const snapshots=[];h.adapter.canReload=()=>true;h.env.reload=async snapshot=>snapshots.push(snapshot);
+  const r=await core.run(config({endAt:180000,reloadEveryMs:60000}),h.adapter,h.env);
+  assert.equal(r.state,'reloading');assert.equal(snapshots.length,1);assert.equal(h.env.now(),60000);assert.deepEqual(h.writes,{});
+  assert.equal(snapshots[0].courses.length,2);
+});
+test('reload is deferred while a website dialog or request is active',async()=>{
+  const h=harness({a:['full']});let calledAt=0;h.adapter.canReload=()=>h.env.now()>=75000;h.env.reload=async()=>{calledAt=h.env.now();};
+  const r=await core.run(config({targets:[a],endAt:180000,reloadEveryMs:60000}),h.adapter,h.env);
+  assert.equal(r.state,'reloading');assert.ok(calledAt>=75000);
+});
+test('reload also runs while waiting for enrollment start but never past the end',async()=>{
+  const h=harness();let reloads=0;h.adapter.canReload=()=>true;h.env.reload=async()=>reloads++;
+  assert.equal((await core.run(config({startAt:120000,endAt:180000,reloadEveryMs:60000}),h.adapter,h.env)).state,'reloading');assert.equal(reloads,1);assert.deepEqual(h.effects,[]);
+  const end=harness({a:['full']});end.adapter.canReload=()=>true;end.env.reload=async()=>{throw Error('late reload');};
+  assert.equal((await core.run(config({targets:[a],endAt:60000,reloadEveryMs:60000}),end.adapter,end.env)).state,'expired');
+});
+test('resumed successful and uncertain courses keep their state instead of submitting again',async()=>{
+  const h=harness();h.env.initialCourses=[{state:'success',attempts:2},{state:'uncertain',attempts:3}];
+  const r=await core.run(config(),h.adapter,h.env);assert.equal(r.state,'expired');assert.deepEqual(h.effects,[]);assert.equal(r.courses[1].attempts,3);
+});
+test('task storage retains only task metadata and refuses another account',()=>{
+  const values=new Map();const storage={getItem:k=>values.get(k)??null,setItem:(k,v)=>values.set(k,v),removeItem:k=>values.delete(k)};
+  const store=core.createTaskStore(storage,'student-a');store.save({config:config({targets:[{...a,token:'SECRET'}]}),courses:[{state:'uncertain',attempts:2}],autoResume:true});
+  assert.equal(store.read().courses[0].state,'uncertain');assert.equal([...values.values()].join('').includes('SECRET'),false);
+  assert.equal(core.createTaskStore(storage,'student-b').read(),null);
+});
