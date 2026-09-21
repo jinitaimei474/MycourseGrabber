@@ -1,0 +1,1 @@
+const fs=require('node:fs'),path=require('node:path');const root=path.resolve(__dirname,'..');fs.mkdirSync(path.join(root,'vendor'),{recursive:true});fs.copyFileSync(path.join(root,'../course-timer.user.js'),path.join(root,'vendor/course-timer.user.js'));console.log('Course adapter synchronized.');

@@ -2,4 +2,5 @@ artifacts/
 node_modules/
 *.log
 .edge-test-profile/
-
+desktop/release/
+desktop/vendor/

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>交大助手</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<aside class="sidebar">
+  <div class="brand"><span class="brand-mark">交</span><div><strong>交大助手</strong><small>让琐事，从容一点</small></div></div>
+  <div class="nav-caption">我的工作台</div>
+  <nav><button data-module="courses" class="nav-item active"><span class="nav-icon">▦</span>课程助手<span class="nav-arrow">›</span></button><button data-module="shuiyuan" class="nav-item"><span class="nav-icon">≋</span>水源帖子<span class="soon">待接入</span></button></nav>
+  <div class="sidebar-bottom"><span class="small-leaf">✳</span><p>留一点时间<br>给课堂以外的生活。</p><small>本地运行 · Desktop 1.0</small></div>
+</aside>
+<main>
+  <header class="page-header"><div><div class="eyebrow">SJTU · CAMPUS WORKSPACE</div><h1 id="page-title">把选课安排好。</h1><p id="page-subtitle">选好课程，设好时间，剩下的交给助手。</p></div><button id="show-browser" class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">Edge 尚未连接</span><span>↗</span></button></header>
+  <section id="course-page">
+    <section class="card account-card"><div class="section-heading"><div><span class="step">01</span><h2>连接教务系统</h2></div><span class="pill">专用 Edge 窗口</span></div>
+      <div class="account-form"><label>jAccount 用户名<input id="username" autocomplete="off" spellcheck="false" placeholder="网页未填入时使用"></label><label>jAccount 密码<input id="password" type="password" autocomplete="off" placeholder="仅在本次运行中保留"></label><button id="connect" class="primary">打开 Edge 并连接 <span>↗</span></button></div>
+      <p class="helper" id="browser-message">已有登录状态会优先使用；只补全网页中未填写的账号密码。</p>
+    </section>
+    <div class="workspace-grid">
+      <section class="card search-card"><div class="section-heading"><div><span class="step">02</span><h2>找到想上的课</h2></div><span id="result-count" class="muted">0 个教学班</span></div>
+        <label>课程类别<select id="category"><option value="">连接后加载课程类别</option></select></label>
+        <label>课程名称或课号<textarea id="query" rows="2" placeholder="例如：EE2905，电工学&#10;多个关键词用逗号或换行分隔"></textarea></label>
+        <div class="search-row"><label>教师姓名 <span class="optional">可选，可填多人</span><input id="teachers" placeholder="例如：张老师，李老师"></label><button id="search" class="primary soft">查询课程</button></div>
+        <div id="results" class="result-list"><div class="empty"><div class="empty-symbol">⌕</div><h3>下一门好课，从这里开始</h3><p>连接教务系统后查询课程<br>点击教学班旁的“加入”，添加到右侧任务。</p></div></div>
+      </section>
+      <section class="card task-card"><div class="section-heading"><div><span class="step">03</span><h2>我的选课任务</h2></div><span id="task-count" class="pill">0 / 10 门</span></div>
+        <p class="helper task-help">同门课程可加入多个教学班作为备选，任一选上即完成。</p>
+        <div id="tasks" class="task-list"><div class="empty compact"><div class="empty-symbol">＋</div><p>把想上的教学班加入这里</p></div></div>
+        <div class="schedule"><div class="time-grid"><label>开始时间 <span class="optional">北京时间</span><input id="start-time" type="datetime-local" step="1"></label><label>结束时间<input id="end-time" type="datetime-local" step="1"></label></div><div class="time-grid"><label>每轮间隔 <span class="optional">秒</span><input id="interval" type="number" min="5" max="60" value="5"></label><label>整页刷新 <span class="optional">分钟，0 关闭</span><input id="reload" type="number" min="0" max="120" value="60"></label></div></div>
+        <div class="run-status"><span id="run-dot" class="dot"></span><p id="run-message">准备就绪后，启动全部任务</p></div>
+        <div class="run-buttons"><button id="start-run" class="primary">启动全部任务 <span>→</span></button><button id="stop" class="secondary" disabled>停止</button></div>
+        <p class="footnote">正式启动会执行选课。全部成功或到达结束时间即停止。</p>
+      </section>
+    </div>
+    <section class="card log-card"><div class="section-heading"><div><span class="log-dot"></span><h2>运行记录</h2></div><span class="muted">只记录进度，不记录密码</span></div><div id="logs" class="logs"><p class="muted">等待第一次连接。</p></div></section>
+  </section>
+  <section id="shuiyuan-page" class="card future-page" hidden><span class="future-symbol">≋</span><span class="pill">未来的工作台</span><h2>水源里的好内容，也值得整理。</h2><p>水源帖子模块，留待下一步接入。</p><p class="muted">这里将承载帖子检索、采集任务与内容导出。<br>当前版本提供课程助手，后续模块独立扩展。</p><button id="back-courses" class="primary soft">返回课程助手 →</button></section>
+  <footer>任务保存在本机。请保持软件、Edge 和网络可用；学校确认弹窗需要你处理。</footer>
+</main>
+<div id="toast" role="alert" hidden></div><script src="app.js"></script>
+</body></html>
