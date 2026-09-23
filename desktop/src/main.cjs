@@ -2,19 +2,31 @@
 const {app,BrowserWindow,ipcMain,dialog,powerSaveBlocker}=require('electron');
 const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Store}=require('./services/store.cjs');const {Scheduler}=require('./services/scheduler.cjs');const {BrowserSession}=require('./services/browser.cjs');const {safeError}=require('./services/model.cjs');const modules=require('./modules/index.cjs');
+const {ShuiyuanService}=require('./modules/shuiyuan/service.cjs');const fs=require('node:fs/promises');
 if(process.env.SJTU_ASSISTANT_DATA_DIR)app.setPath('userData',path.resolve(process.env.SJTU_ASSISTANT_DATA_DIR));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
-let win,store,browser,scheduler,operation=null,connected=false,categories=[],results=[],logs=[],blocker=null;
+let win,store,browser,scheduler,forum,operation=null,operationModule='',connected=false,categories=[],results=[],logs=[],blocker=null;
 let browserMessage='尚未连接 Edge';
 function errorText(error){let message=safeError(error);for(const value of [browser?.credentials.password])if(value)message=message.split(value).join('[隐藏]');return message;}
 function log(message){message=errorText(message);if(logs.at(-1)?.message!==message)logs.push({time:Date.now(),message});logs=logs.slice(-100);}
-function snapshot(){const state=store.view();return {...state,modules,busy:!!operation||!!scheduler.controller,connected,browserMessage,categories,results,logs,status:scheduler.status};}
+function snapshot(){const state=store.view();return {...state,modules,busy:!!operation||!!scheduler.controller,operationModule:operation?operationModule:scheduler.controller?'courses':'',shuiyuan:forum.view(),connected,browserMessage,categories,results,logs,status:scheduler.status};}
 function emit(){if(win&&!win.isDestroyed())win.webContents.send('assistant:state',snapshot());}
 function idle(){if(operation||scheduler.controller)throw Error('当前操作尚未结束，请先停止');}
-async function exclusive(fn){idle();operation=new AbortController();emit();try{await fn(operation.signal);}finally{operation=null;emit();}return snapshot();}
+async function exclusive(fn,module='courses'){idle();operation=new AbortController();operationModule=module;emit();try{await fn(operation.signal);}finally{operation=null;operationModule='';emit();}return snapshot();}
+function forumTask(fn){return exclusive(async signal=>{try{await fn(signal);}catch(error){forum.note(errorText(error));throw error;}},'shuiyuan');}
 async function dispatch(action,payload={}){
   switch(action){
     case 'snapshot':return snapshot();
+    case 'shuiyuanConnect':return forumTask(signal=>forum.connect(signal));
+    case 'shuiyuanSearch':return forumTask(signal=>forum.search(payload,signal));
+    case 'shuiyuanCrawl':return forumTask(signal=>forum.crawl(payload,signal));
+    case 'shuiyuanStop':if(operationModule==='shuiyuan')operation?.abort();return snapshot();
+    case 'shuiyuanShow':await forum.show();return null;
+    case 'shuiyuanExport':return forumTask(async()=>{
+      const format=payload.format,text=forum.export(format);
+      const file=await dialog.showSaveDialog(win,{title:'保存水源采集内容',defaultPath:`水源-${forum.result.complete?'完整':'未完成'}-${new Date().toISOString().slice(0,10)}.${format}`,filters:[{name:format.toUpperCase(),extensions:[format]}]});
+      if(!file.canceled&&file.filePath){await fs.writeFile(file.filePath,text,'utf8');forum.note('导出已保存。');}
+    });
     case 'connect':return exclusive(async signal=>{
       browser.credentials={username:String(payload.username||'').slice(0,200),password:String(payload.password||'').slice(0,1000)};
       connected=false;const info=await browser.ensureCourse(signal,Date.now()+120000);const previous=store.view().owner;
@@ -39,7 +51,7 @@ async function dispatch(action,payload={}){
       idle();if(!connected)throw Error('请先连接选课页面');
       const promise=scheduler.start();promise.catch(error=>{log(error);emit();});await Promise.resolve();return snapshot();
     }
-    case 'stop':operation?.abort();scheduler.stop();await browser.cancel();log('已请求停止；已经提交的操作请核对网站结果');emit();return snapshot();
+    case 'stop':operation?.abort();if(operationModule==='shuiyuan'){log('已请求停止水源操作');}else{scheduler.stop();await browser.cancel();log('已请求停止；已经提交的操作请核对网站结果');}emit();return snapshot();
     case 'retry':idle();store.retry(payload.kchId);emit();return snapshot();
     case 'showBrowser':await browser.show();return null;
     default:throw Error('不支持的操作');
@@ -49,7 +61,8 @@ app.whenReady().then(()=>{
   store=new Store(path.join(app.getPath('userData'),'tasks.json'));
   browser=new BrowserSession({profileDir:path.join(app.getPath('userData'),'edge-profile'),tempDir:path.join(app.getPath('userData'),'temporary'),adapterPath:path.join(__dirname,'../vendor/course-timer.user.js')});
   scheduler=new Scheduler({store,browser});
-  browser.on('status',message=>{browserMessage=message;if(message.includes('Edge 已关闭'))connected=false;log(message);emit();});
+  forum=new ShuiyuanService({browser});forum.on('update',emit);
+  browser.on('status',message=>{browserMessage=message;if(message.includes('Edge 已关闭')){connected=false;forum.connected=false;forum.message='Edge 已关闭，请重新连接水源';}log(message);emit();});
   scheduler.on('update',status=>{log(status.message);if(scheduler.controller&&blocker===null)blocker=powerSaveBlocker.start('prevent-app-suspension');if(!scheduler.controller&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}emit();});
   win=new BrowserWindow({width:1320,height:930,minWidth:1060,minHeight:760,backgroundColor:'#f5f7f4',title:'交大助手',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});
   const url=pathToFileURL(path.join(__dirname,'ui/index.html')).href;

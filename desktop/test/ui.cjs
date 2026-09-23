@@ -2,7 +2,7 @@ const {_electron:electron}=require('playwright-core');const path=require('node:p
 (async()=>{const env={...process.env,SJTU_ASSISTANT_DATA_DIR:fs.mkdtempSync(path.resolve('../artifacts/desktop-ui-'))};delete env.ELECTRON_RUN_AS_NODE;
 const app=await electron.launch({args:[path.resolve('.')],env});try{const page=await app.firstWindow();await page.waitForSelector('#connect');
 assert.equal(await page.locator('#password').getAttribute('type'),'password');await page.locator('#password').fill('never-save-this-test-value');
-await page.locator('[data-module="shuiyuan"]').click();await page.getByText('水源帖子模块，留待下一步接入。',{exact:true}).waitFor();
+await page.locator('[data-module="shuiyuan"]').click();await page.locator('#sy-connect').waitFor();
 await page.locator('[data-module="courses"]').click();await page.locator('#start-run').click();await page.locator('#toast').filter({hasText:'连接'}).waitFor();
 assert.equal(await page.evaluate(()=>typeof window.require),'undefined');
 const state=await page.evaluate(()=>window.assistant.invoke('snapshot'));assert(!JSON.stringify(state).includes('never-save-this-test-value'));

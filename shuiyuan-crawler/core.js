@@ -55,10 +55,10 @@
       signal?.addEventListener('abort', stop, {once: true});
     });
   }
-  function createClient({fetchImpl = globalThis.fetch.bind(globalThis), sleep: wait = sleep, interval = 1000, onWait = () => {}} = {}) {
+  function createClient({fetchImpl = globalThis.fetch.bind(globalThis), sleep: wait = sleep, interval = 1000, onWait = () => {}, metadata = false} = {}) {
     let lastRequest = 0;
     return {async get(path, {signal} = {}) {
-      if (!/^\/(?:t\/\d+(?:\/posts)?\.json|search\.json)(?:\?|$)/.test(path)) throw Error('请求地址不在允许范围');
+      if (!/^\/(?:t\/\d+(?:\/posts)?\.json|search\.json)(?:\?|$)/.test(path) && !(metadata && /^\/(?:site|tags|session\/current)\.json$/.test(path))) throw Error('请求地址不在允许范围');
       for (let attempt = 0; attempt < 4; attempt++) {
         abortCheck(signal);
         const delay = Math.max(0, interval - (Date.now() - lastRequest));
