@@ -11,6 +11,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     assert.equal(await page.locator('#password').getAttribute('type'),'password');
     const state=await page.evaluate(()=>window.assistant.invoke('snapshot'));assert.equal(state.targets.length,0);assert.equal(state.connected,false);
     assert(state.modules.find(m=>m.id==='shuiyuan').available);assert.equal(state.shuiyuan.connected,false);
+    assert(state.modules.find(m=>m.id==='tennis').available);assert.equal(state.tennis.connected,false);
+    await page.locator('[data-module="tennis"]').click();await page.locator('#tn-connect').waitFor();assert.equal(await page.locator('#tn-password').getAttribute('type'),'password');
+    await page.locator('#tn-live-start').waitFor();assert.equal(await page.locator('#tn-live-after').inputValue(),'18:00');assert.equal(state.tennis.availability.slots.length,0);
     await page.locator('[data-module="shuiyuan"]').click();await page.locator('#sy-connect').waitFor();
     const result=await app.evaluate(async({app})=>{
       const req=process.getBuiltinModule('module').createRequire(app.getAppPath()+'/package.json');

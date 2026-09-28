@@ -9,6 +9,7 @@ function keyOf(t){return `${t.context.split('|').slice(0,2).join('|')}|${t.kchId
 function render(state){
  current=state;
  window.shuiyuanUI.render(state);
+ window.tennisUI.render(state);
  $('connection-text').textContent=state.connected?'自主选课已连接':'Edge 尚未连接';$('connection-dot').className=`dot${state.connected?' connected':''}`;
  $('browser-message').textContent=state.browserMessage;$('run-message').textContent=state.status.message;$('run-dot').className=`dot${state.busy?' running':state.status.phase==='success'?' connected':''}`;
  for(const id of ['username','password','connect','query','teachers','category','search','start-time','end-time','interval','reload','start-run'])$(id).disabled=state.busy;
@@ -30,7 +31,7 @@ function render(state){
  }
  $('logs').replaceChildren();for(const item of state.logs.slice(-25).reverse()){const line=node('div',undefined,'log-line');line.append(node('span',new Date(item.time).toLocaleTimeString('zh-CN',{hour12:false}),'log-time'),node('span',item.message));$('logs').appendChild(line);}
 }
-function showModule(id){const course=id==='courses';$('course-page').hidden=!course;$('shuiyuan-page').hidden=course;$('show-browser').hidden=!course;$('page-title').textContent=course?'把选课安排好。':'把好内容留下来。';$('page-subtitle').textContent=course?'选好课程，设好时间，剩下的交给助手。':'按帖子、帖主与分类检索，把想看的发言连同时间一起保存。';for(const b of document.querySelectorAll('[data-module]'))b.classList.toggle('active',b.dataset.module===id);}
+function showModule(id){const course=id==='courses',tennis=id==='tennis';$('course-page').hidden=!course;$('shuiyuan-page').hidden=id!=='shuiyuan';$('tennis-page').hidden=!tennis;$('show-browser').hidden=!course;$('page-title').textContent=course?'把选课安排好。':tennis?'给网球留个时间。':'把好内容留下来。';$('page-subtitle').textContent=course?'选好课程，设好时间，剩下的交给助手。':tennis?'排好首选和备选，预约后扫码付款。':'按帖子、帖主与分类检索，把想看的发言连同时间一起保存。';for(const b of document.querySelectorAll('[data-module]'))b.classList.toggle('active',b.dataset.module===id);}
 for(const button of document.querySelectorAll('[data-module]'))button.onclick=()=>showModule(button.dataset.module);
 $('connect').onclick=()=>invoke('connect',{username:$('username').value,password:$('password').value});
 $('search').onclick=()=>invoke('search',{query:$('query').value,teachers:$('teachers').value,category:$('category').value});

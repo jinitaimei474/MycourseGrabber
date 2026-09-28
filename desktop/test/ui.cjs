@@ -17,6 +17,6 @@ await page.locator('.retry-button').waitFor();assert(await page.locator('.retry-
 await assert.rejects(()=>page.evaluate(()=>window.assistant.invoke('retry',{kchId:'a'})),/停止/);await page.locator('#stop').click();await page.waitForFunction(()=>!document.getElementById('start-run').disabled);
 assert.equal((await page.evaluate(()=>window.assistant.invoke('snapshot'))).progress['2026|3|a'].state,'uncertain');await page.locator('.retry-button').click();
 await page.waitForFunction(()=>!document.querySelector('.retry-button'));
-await page.locator('.text-button').click();await page.locator('#password').fill('');await page.evaluate(()=>document.getElementById('toast').hidden=true);
+await page.locator('#course-page .text-button').click();await page.locator('#password').fill('');await page.evaluate(()=>document.getElementById('toast').hidden=true);
 await page.screenshot({path:path.resolve('../artifacts/desktop-ui.png'),fullPage:true});console.log('PASS: real Electron UI, module navigation, start guard, isolated renderer, password omitted from snapshot.');
 }finally{try{const page=await app.firstWindow();await page.evaluate(()=>window.assistant.invoke('stop'));await page.waitForTimeout(200);}catch{}await app.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

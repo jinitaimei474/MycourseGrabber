@@ -4,8 +4,8 @@
 <aside class="sidebar">
   <div class="brand"><span class="brand-mark">交</span><div><strong>交大助手</strong><small>让琐事，从容一点</small></div></div>
   <div class="nav-caption">我的工作台</div>
-  <nav><button data-module="courses" class="nav-item active"><span class="nav-icon">▦</span>课程助手<span class="nav-arrow">›</span></button><button data-module="shuiyuan" class="nav-item"><span class="nav-icon">≋</span>水源帖子<span class="nav-arrow">›</span></button></nav>
-  <div class="sidebar-bottom"><span class="small-leaf">✳</span><p>留一点时间<br>给课堂以外的生活。</p><small>本地运行 · Desktop 1.1</small></div>
+  <nav><button data-module="courses" class="nav-item active"><span class="nav-icon">▦</span>课程助手<span class="nav-arrow">›</span></button><button data-module="shuiyuan" class="nav-item"><span class="nav-icon">≋</span>水源帖子<span class="nav-arrow">›</span></button><button data-module="tennis" class="nav-item"><span class="nav-icon">◉</span>网球预约<span class="nav-arrow">›</span></button></nav>
+  <div class="sidebar-bottom"><span class="small-leaf">✳</span><p>留一点时间<br>给课堂以外的生活。</p><small>本地运行 · Desktop 1.3</small></div>
 </aside>
 <main>
   <header class="page-header"><div><div class="eyebrow">SJTU · CAMPUS WORKSPACE</div><h1 id="page-title">把选课安排好。</h1><p id="page-subtitle">选好课程，设好时间，剩下的交给助手。</p></div><button id="show-browser" class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">Edge 尚未连接</span><span>↗</span></button></header>
@@ -54,7 +54,49 @@
       </section>
     </div>
   </section>
-  <footer>任务保存在本机。请保持软件、Edge 和网络可用；学校确认弹窗需要你处理。</footer>
+  <section id="tennis-page" hidden>
+    <section class="card account-card"><div class="section-heading"><div><span class="step">01</span><h2>连接场馆预约</h2></div><span class="pill">每天 12:00 放号 · 提前七天</span></div>
+      <div class="account-form"><label>jAccount 用户名<input id="tn-username" autocomplete="off" placeholder="网页未填入时使用"></label><label>jAccount 密码<input id="tn-password" type="password" autocomplete="off" placeholder="仅在本次运行中保留"></label><button id="tn-connect" class="primary">连接场馆预约 ↗</button></div>
+      <p id="tn-connection" class="helper">复用专用 Edge 登录状态；缺失的账号密码才会补填。</p>
+    </section>
+    <section class="card tennis-availability">
+      <div class="section-heading"><div><span class="step">实时</span><h2>空闲场次</h2></div><span id="tn-live-count" class="pill">尚未查询</span></div>
+      <div class="tennis-filters">
+        <label>日期<input id="tn-live-date" type="date"></label>
+        <label>场馆<select id="tn-live-venue"><option value="both">东区 + 胡晓明</option><option>东区网球场</option><option>胡晓明网球场</option></select></label>
+        <label>开始不早于<select id="tn-live-after"></select></label>
+        <label>结束不晚于<select id="tn-live-before"></select></label>
+        <label>刷新间隔（秒）<input id="tn-live-interval" type="number" min="3" max="60" value="5"></label>
+      </div>
+      <div class="forum-actions"><div class="run-buttons"><button id="tn-live-start" class="primary">查询并持续监测</button><button id="tn-live-stop" class="secondary" disabled>停止监测</button></div><span id="tn-live-updated" class="muted" role="status" aria-live="polite">连接场馆后开始查询</span></div>
+      <p class="helper">例如选择 18:00，即列出当天 18:00 起的空闲场次。监测只查询余量；点预约后再次核对，并尝试下单最多 5 分钟。</p>
+      <p id="tn-live-warning" class="helper" role="status"></p>
+      <div id="tn-live-slots" class="tennis-slots"><p class="empty">选择日期和时间范围，查看可预约场次。</p></div>
+      <div class="forum-actions"><p id="tn-live-selection" class="helper">可以单场直接预约，也可以勾选多个作为备选；同一天只预约一场。</p><button id="tn-live-book" class="secondary" disabled>预约所选候选（0）</button></div>
+    </section>
+    <div class="workspace-grid tennis-grid">
+      <section class="card"><div class="section-heading"><div><span class="step">02</span><h2>安排一场网球</h2></div><span class="pill">按顺序尝试</span></div>
+        <p class="helper">每行是一个完整候选。首选无场地时依次尝试备选；同一天只提交一个订单。</p>
+        <div class="time-grid"><label>场馆<select id="tn-venue"><option>东区网球场</option><option>胡晓明网球场</option></select></label><label>预约日期<input id="tn-date" type="date"></label></div>
+        <div class="time-grid"><label>时间段<select id="tn-time"></select></label><label>场地编号 <span class="optional">可选</span><input id="tn-court" type="number" min="1" max="99" placeholder="留空，任意可用场地"></label></div>
+        <button id="tn-add" class="secondary">＋ 加入候选</button><ol id="tn-candidates" class="tennis-candidates"></ol>
+        <div class="schedule"><div class="time-grid"><label>开始时间 <span class="optional">北京时间</span><input id="tn-start" type="datetime-local" step="1"></label><label>结束时间<input id="tn-end" type="datetime-local" step="1"></label></div>
+          <div class="time-grid"><label>检查间隔 <span class="optional">秒</span><input id="tn-interval" type="number" min="1" max="60" value="3"></label><div class="tennis-time-actions"><button id="tn-release" class="text-button">按首选日期计算放号时间</button><button id="tn-now" class="text-button">现在开始 · 检查 5 分钟</button></div></div>
+        </div>
+        <div class="run-buttons"><button id="tn-save" class="secondary">保存配置</button><button id="tn-start-run" class="primary">启动预约 →</button><button id="tn-stop" class="secondary" disabled>停止</button></div>
+        <p class="footnote">启动后会提交订单、接受预订规定并生成微信缴费二维码，由你扫码支付。生成一单后本次任务停止。具体开放日期以网站为准。</p>
+      </section>
+      <section class="card tennis-result"><div class="section-heading"><div><span class="step">03</span><h2>预约与付款</h2></div><button id="tn-show" class="text-button">查看网页 ↗</button></div>
+        <p id="tn-status" class="forum-status" role="status" aria-live="polite">等待设置预约。</p>
+        <div id="tn-qr-area" hidden><div class="tennis-qr-heading">微信扫码付款</div><img id="tn-qr" alt="当前订单的微信缴费二维码"><p id="tn-countdown" class="tennis-countdown"></p><p class="helper">二维码生成表示待付款。支付完成后，请核对网站订单状态。</p></div>
+        <div id="tn-records" class="tennis-records"></div>
+        <button id="tn-check" class="secondary">核对订单状态</button>
+        <p class="helper">如出现滑块验证，请在 Edge 中完成，再核对订单。提交结果未知时不会继续下单。</p>
+      </section>
+    </div>
+    <section class="card log-card"><div class="section-heading"><div><span class="log-dot"></span><h2>预约记录</h2></div><span class="muted">北京时间 · 本机保存</span></div><div id="tn-logs" class="logs"></div></section>
+  </section>
+  <footer>任务保存在本机。请保持软件、Edge 和网络可用；额外验证需在网页中处理。</footer>
 </main>
-<div id="toast" role="alert" hidden></div><script src="shuiyuan.js"></script><script src="app.js"></script>
+<div id="toast" role="alert" hidden></div><script src="shuiyuan.js"></script><script src="tennis-availability.js"></script><script src="tennis.js"></script><script src="app.js"></script>
 </body></html>
