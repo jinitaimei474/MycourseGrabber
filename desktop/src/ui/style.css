@@ -15,6 +15,13 @@
 .tennis-qr-heading { color: var(--tennis-accent); font-weight: 700; }
 #tn-qr { display: block; width: 232px; height: auto; max-width: 100%; padding: 12px; background: white; margin: 14px auto; image-rendering: pixelated; }
 #tn-qr.expired { opacity: .3; }
+.forum-local { margin-bottom: 24px; }
+.forum-local .forum-query { grid-template-columns: 2fr 1fr; }
+.forum-local-results { max-height: 620px; overflow: auto; }
+.forum-local-result { padding: 18px 0; border-top: 1px solid var(--line); }
+.forum-local-result h3 { font-size: 15px; margin: 0; }
+.forum-local-result pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.7; }
+#sy-project-path { overflow-wrap: anywhere; }
 .tennis-countdown { color: #a45b20; font-weight: 600; }
 .tennis-availability { margin-top: 20px; }
 .tennis-filters { display: grid; grid-template-columns: 1.1fr 1.3fr 1fr 1fr .85fr; gap: 12px; margin-bottom: 18px; }

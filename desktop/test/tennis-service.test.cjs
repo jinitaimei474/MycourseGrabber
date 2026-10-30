@@ -1,9 +1,10 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {TennisStore}=require('../src/modules/tennis/store.cjs');
+const futureDate=new Date(Date.now()+3*86400000).toISOString().slice(0,10);
 function setup(options={}){
  const {TennisService}=require('../src/modules/tennis/service.cjs');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'tennis-service-'));const store=new TennisStore(path.join(dir,'tennis.json'));
- const c={venue:'东区网球场',date:'2026-10-02',time:'18:00-19:00',court:''};store.configure({candidates:[c,{...c,venue:'胡晓明网球场'}],startAt:Date.now()-100,endAt:Date.now()+10000,intervalMs:1000});
+ const c={venue:'东区网球场',date:futureDate,time:'18:00-19:00',court:''};store.configure({candidates:[c,{...c,venue:'胡晓明网球场'}],startAt:Date.now()-100,endAt:Date.now()+10000,intervalMs:1000});
  const calls=[];const adapter={owner:'alice',connect:async()=> 'alice',checkOwner:async()=>{},orders:async()=>[],prepare:async c=>c.venue==='胡晓明网球场',submit:async c=>{calls.push(c);return {orderId:'o1',amount:'5'};},payment:async()=>({qrFile:'q.png',expiresAt:Date.now()+600000}),...options};
  const service=new TennisService({store,adapter});return {service,store,calls,c};
 }
@@ -18,7 +19,7 @@ test('known rejection allows fallback without leaving a false lock',async()=>{
  let count=0;const {service,store,c}=setup({prepare:async()=>true,submit:async()=>++count===1?{rejected:true,message:'场地已被预约'}:{orderId:'o2'}});await service.connect({});await service.run();assert.equal(count,2);assert.equal(store.get('alice',c.date).orderId,'o2');
 });
 test('existing online order blocks submission and account mismatch stops before submit',async()=>{
- const x=setup({orders:async()=>[{date:'2026-10-02',orderId:'prior',state:'success'}]});await x.service.connect({});await x.service.run();assert.equal(x.calls.length,0);
+ const x=setup({orders:async()=>[{date:futureDate,orderId:'prior',state:'success'}]});await x.service.connect({});await x.service.run();assert.equal(x.calls.length,0);
  const y=setup({checkOwner:async()=>{throw Error('账号已变化');}});await y.service.connect({});await y.service.run();assert.equal(y.calls.length,0);
 });
 test('stop while waiting makes no reservation',async()=>{

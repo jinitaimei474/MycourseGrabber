@@ -5,7 +5,7 @@
   <div class="brand"><span class="brand-mark">交</span><div><strong>交大助手</strong><small>让琐事，从容一点</small></div></div>
   <div class="nav-caption">我的工作台</div>
   <nav><button data-module="courses" class="nav-item active"><span class="nav-icon">▦</span>课程助手<span class="nav-arrow">›</span></button><button data-module="shuiyuan" class="nav-item"><span class="nav-icon">≋</span>水源帖子<span class="nav-arrow">›</span></button><button data-module="tennis" class="nav-item"><span class="nav-icon">◉</span>网球预约<span class="nav-arrow">›</span></button></nav>
-  <div class="sidebar-bottom"><span class="small-leaf">✳</span><p>留一点时间<br>给课堂以外的生活。</p><small>本地运行 · Desktop 1.3</small></div>
+  <div class="sidebar-bottom"><span class="small-leaf">✳</span><p>留一点时间<br>给课堂以外的生活。</p><small>本地运行 · Desktop 1.5</small></div>
 </aside>
 <main>
   <header class="page-header"><div><div class="eyebrow">SJTU · CAMPUS WORKSPACE</div><h1 id="page-title">把选课安排好。</h1><p id="page-subtitle">选好课程，设好时间，剩下的交给助手。</p></div><button id="show-browser" class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">Edge 尚未连接</span><span>↗</span></button></header>
@@ -33,6 +33,17 @@
     <section class="card log-card"><div class="section-heading"><div><span class="log-dot"></span><h2>运行记录</h2></div><span class="muted">只记录进度，不记录密码</span></div><div id="logs" class="logs"><p class="muted">等待第一次连接。</p></div></section>
   </section>
   <section id="shuiyuan-page" hidden>
+    <section class="card forum-connect"><div><h2>本地资料项目</h2><p id="sy-project-path" class="helper">采集前选择文件夹。帖子、Markdown、HTML 和图片会自动保存到项目中。</p><p id="sy-project-count" class="helper"></p></div><div class="forum-actions"><button id="sy-project-open" class="secondary" disabled>打开资料库 ↗</button><button id="sy-project" class="primary soft">选择项目文件夹</button></div></section>
+    <section class="card forum-local">
+      <div class="section-heading"><div><span class="step">⌕</span><h2>搜索已保存内容</h2></div><span class="pill">本地 · 无需登录</span></div>
+      <div class="forum-query"><label>正文关键词<input id="sy-local-query" placeholder="例如 图书馆 自习（空格分隔，同时匹配）"></label><label>发言作者<input id="sy-local-author" list="sy-local-authors" placeholder="全部，或 @alice, bob"><datalist id="sy-local-authors"></datalist></label></div>
+      <div class="time-grid"><label>类别<select id="sy-local-category"><option value="">全部类别</option></select></label><label>标签<input id="sy-local-tag" list="sy-local-tags" placeholder="不限标签"><datalist id="sy-local-tags"></datalist></label></div>
+      <div class="time-grid"><label>开始日期或时间<input id="sy-local-start" placeholder="北京时间 · 留空不限"></label><label>结束日期或时间<input id="sy-local-end" placeholder="YYYY-MM-DD，包含当天全天"></label></div>
+      <div class="forum-actions"><p class="helper">搜索当前项目已保存的正文；类别和标签精确匹配。结果按发帖时间从新到旧排列。</p><button id="sy-local-search" class="primary soft" disabled>搜索资料库</button></div>
+      <p id="sy-local-summary" class="helper" role="status">选择项目后即可搜索历史内容。</p>
+      <div id="sy-local-results" class="forum-local-results"></div>
+      <div class="forum-actions"><button id="sy-local-prev" class="secondary" disabled>上一页</button><button id="sy-local-next" class="secondary" disabled>下一页</button></div>
+    </section>
     <section class="card forum-connect"><div><h2>连接水源社区</h2><p id="sy-connection" class="helper">首次使用，在专用 Edge 中登录；以后复用登录状态。</p></div><div class="forum-actions"><button id="sy-show" class="secondary">查看水源 ↗</button><button id="sy-connect" class="primary">连接水源</button></div></section>
     <div class="workspace-grid forum-grid">
       <section class="card"><div class="section-heading"><div><span class="step">01</span><h2>找到值得留下的帖子</h2></div><span id="sy-count" class="muted">0 个主题</span></div>
@@ -46,9 +57,10 @@
       <section class="card"><div class="section-heading"><div><span class="step">02</span><h2>选择要留下的发言</h2></div><span class="pill">正文 + 发帖时间</span></div>
         <label>爬取用户<input id="sy-users" value="全部" placeholder="全部，或 @alice, bob"></label><p class="helper">填写发言者的用户名，多个用逗号分隔；与左侧帖主筛选独立。</p>
         <details class="forum-time"><summary>时间范围 <span class="optional">可选 · 北京时间</span></summary><label>开始日期或时间<input id="sy-start" placeholder="2026-09-01 或 2026-09-01 08:00:00"></label><label>结束日期或时间<input id="sy-end" placeholder="2026-09-21 或 2026-09-21 18:00:00"></label><p class="helper">留空不限；仅填结束日期时包含当天全天。</p></details>
-        <div class="run-buttons"><button id="sy-crawl" class="primary">采集所选帖子 →</button><button id="sy-stop" class="secondary" disabled>停止</button></div>
+        <p class="helper">按帖子编号自动识别并更新，生成 MD / HTML，下载水源托管图片。已保存的其他用户或时间范围内容会保留。</p>
+        <div class="run-buttons"><button id="sy-crawl" class="primary">采集并更新项目 →</button><button id="sy-stop" class="secondary" disabled>停止</button></div>
         <p id="sy-status" class="forum-status" role="status" aria-live="polite">等待连接。</p><progress id="sy-progress" max="1" value="0"></progress>
-        <div id="sy-summary" class="forum-summary">结果仅保留在本次软件运行中，请及时导出。</div>
+        <div id="sy-summary" class="forum-summary">正文及图片自动保存到项目；下方可额外导出本次筛选结果。</div>
         <div class="run-buttons"><button id="sy-txt" class="secondary" disabled>导出 TXT</button><button id="sy-json" class="secondary" disabled>导出 JSON</button></div>
         <div id="sy-preview" class="forum-preview"></div>
       </section>

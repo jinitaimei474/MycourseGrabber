@@ -114,6 +114,9 @@
       const data = await client.get(`/t/${id}.json?include_raw=true`, {signal});
       if (Number(data.id) !== Number(id) || !Array.isArray(data.post_stream?.stream)) throw Error('主题接口结构异常');
       result.title = data.title;
+      result.category_id = data.category_id;
+      result.tags = Array.isArray(data.tags) ? data.tags.map(t => typeof t === 'string' ? t : t.name).filter(Boolean) : undefined;
+      result.owner = data.details?.created_by?.username;
       ids = [...new Set(data.post_stream.stream)];
       if (ids.some(n => !validId(n))) throw Error('楼层索引无效');
       wanted = new Set(ids); result.expected = ids.length;

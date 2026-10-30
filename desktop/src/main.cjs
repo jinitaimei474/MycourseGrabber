@@ -40,6 +40,20 @@ async function dispatch(action,payload={}){
       if(!file.canceled&&file.filePath){await fs.copyFile(source,file.filePath);tennis.note('缴费二维码已保存到所选位置。');}
     },'tennis');
     case 'shuiyuanConnect':return forumTask(signal=>forum.connect(signal));
+    case 'shuiyuanLocalSearch':return forumTask(()=>forum.searchLocal(payload));
+    case 'shuiyuanLocalOpen':return forumTask(async()=>{
+      const target=await forum.localPost(payload);
+      const reader=new BrowserWindow({width:1050,height:820,title:'水源本地阅读',webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,javascript:false}});
+      const expected=pathToFileURL(target.file).href;
+      reader.webContents.on('will-navigate',(event,url)=>{if(url.split('#')[0]!==expected)event.preventDefault();});
+      reader.webContents.setWindowOpenHandler(()=>({action:'deny'}));
+      try{await reader.loadFile(target.file,{hash:target.hash});}catch(error){reader.close();throw error;}
+    });
+    case 'shuiyuanProject':return forumTask(async()=>{
+      const chosen=await dialog.showOpenDialog(win,{title:'选择水源资料项目文件夹',properties:['openDirectory','createDirectory']});
+      if(!chosen.canceled&&chosen.filePaths[0])await forum.chooseProject(chosen.filePaths[0]);
+    });
+    case 'shuiyuanOpenProject':return forumTask(async()=>{const error=await shell.openPath(await forum.projectIndex());if(error)throw Error(error);});
     case 'shuiyuanSearch':return forumTask(signal=>forum.search(payload,signal));
     case 'shuiyuanCrawl':return forumTask(signal=>forum.crawl(payload,signal));
     case 'shuiyuanStop':if(operationModule==='shuiyuan')operation?.abort();return snapshot();
