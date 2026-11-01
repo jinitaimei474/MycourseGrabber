@@ -1,4 +1,5 @@
 'use strict';
+const {fixtureDate}=require('./tennis-fixture.cjs');
 const {_electron:electron}=require('playwright-core'),path=require('node:path'),fs=require('node:fs'),assert=require('node:assert/strict');
 (async()=>{
  const dataDir=fs.mkdtempSync(path.resolve('../artifacts/tennis-live-ui-'));const env={...process.env,SJTU_ASSISTANT_DATA_DIR:dataDir};delete env.ELECTRON_RUN_AS_NODE;
@@ -11,7 +12,7 @@ const {_electron:electron}=require('playwright-core'),path=require('node:path'),
    BrowserSession.prototype.close=async function(){await this.testEdge?.close();};shell.beep=()=>{};Notification.prototype.show=()=>{};
   });
   await page.locator('[data-module="tennis"]').click();await page.locator('#tn-connect').click();await page.waitForFunction(()=>document.getElementById('tn-connection').textContent.includes('alice'));
-  await page.locator('#tn-live-date').fill('2026-10-02');await page.locator('#tn-live-venue').selectOption('胡晓明网球场');await page.locator('#tn-live-interval').fill('3');await page.locator('#tn-live-start').click();
+  await page.locator('#tn-live-date').fill(fixtureDate);await page.locator('#tn-live-venue').selectOption('胡晓明网球场');await page.locator('#tn-live-interval').fill('3');await page.locator('#tn-live-start').click();
   await page.waitForFunction(()=>document.querySelectorAll('.tennis-slot').length===2);
   assert.match(await page.locator('#tn-live-slots').innerText(),/18:00-19:00[\s\S]*20:00-21:00/);
   assert.equal(await app.evaluate(()=>globalThis.tennisFixture.submissions),0);

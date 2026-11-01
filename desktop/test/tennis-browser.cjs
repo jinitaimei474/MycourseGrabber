@@ -2,12 +2,12 @@
 const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),os=require('node:os');const {chromium}=require('playwright-core');
 (async()=>{
  assert(fs.existsSync(path.resolve(__dirname,'../src/modules/tennis/adapter.cjs')),'tennis browser adapter missing');
- const {TennisAdapter}=require('../src/modules/tennis/adapter.cjs'),{installRoutes}=require('./tennis-fixture.cjs');
+ const {TennisAdapter}=require('../src/modules/tennis/adapter.cjs'),{installRoutes,fixtureDate}=require('./tennis-fixture.cjs');
  const edge=await chromium.launch({channel:'msedge',headless:true});const context=await edge.newContext();const state=await installRoutes(context);const browser={context,launch:async()=>{},credentials:{}};
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'tennis-browser-'));const a=new TennisAdapter({browser,qrDir:dir});
  try{
   assert.equal(await a.connect({username:'test',password:'local-only'}),'alice');assert.equal(state.portalSearch,'场馆预约');assert.equal((await a.orders()).length,0);
-  const c={venue:'胡晓明网球场',date:'2026-10-02',time:'18:00-19:00',court:'2'};
+  const c={venue:'胡晓明网球场',date:fixtureDate,time:'18:00-19:00',court:'2'};
   assert.equal(await a.prepare({...c,time:'19:00-20:00'}),false);
   assert.equal(await a.prepare(c),true);const order=await a.submit(c);assert.equal(order.orderId,'o1');assert.equal(state.submissions,1);assert.equal(state.selected,'2/18:00-19:00');assert.equal(state.terms,true);
   const stale=await context.newPage();await stale.goto('https://cwc2.jdcw.sjtu.edu.cn/qr?method=unrelated');state.paymentMethod='';state.confirmed=false;

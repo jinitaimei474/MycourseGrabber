@@ -1,4 +1,5 @@
 'use strict';
+const {fixtureDate}=require('./tennis-fixture.cjs');
 const {_electron:electron}=require('playwright-core'),path=require('node:path'),fs=require('node:fs'),assert=require('node:assert/strict');
 (async()=>{
  const dataDir=fs.mkdtempSync(path.resolve('../artifacts/tennis-ui-'));const env={...process.env,SJTU_ASSISTANT_DATA_DIR:dataDir};delete env.ELECTRON_RUN_AS_NODE;
@@ -11,10 +12,10 @@ const {_electron:electron}=require('playwright-core'),path=require('node:path'),
    BrowserSession.prototype.close=async function(){await this.testEdge?.close();};shell.beep=()=>{};Notification.prototype.show=()=>{};
    dialog.showSaveDialog=async()=>({canceled:false,filePath:req('node:path').join(app.getPath('userData'),'qr-export.png')});
   });
-  await page.locator('[data-module="tennis"]').click();assert.equal(await page.locator('#tn-password').getAttribute('type'),'password');
-  await page.locator('#tn-venue').selectOption('胡晓明网球场');await page.locator('#tn-date').fill('2026-10-02');await page.locator('#tn-time').selectOption('18:00-19:00');await page.locator('#tn-court').fill('2');await page.locator('#tn-add').click();await page.locator('#tn-release').click();
-  assert.equal(await page.locator('#tn-start').inputValue(),'2026-09-25T12:00');
-  await page.locator('#tn-username').fill('alice');await page.locator('#tn-password').fill('not-saved');await page.locator('#tn-connect').click();await page.waitForFunction(()=>document.getElementById('tn-connection').textContent.includes('alice'));
+  await page.locator('[data-module="tennis"]').click();assert.equal(await page.locator('#password').getAttribute('type'),'password');
+  await page.locator('#tn-venue').selectOption('胡晓明网球场');await page.locator('#tn-date').fill(fixtureDate);await page.locator('#tn-time').selectOption('18:00-19:00');await page.locator('#tn-court').fill('2');await page.locator('#tn-add').click();await page.locator('#tn-release').click();
+  assert.equal(await page.locator('#tn-start').inputValue(),new Date(Date.parse(fixtureDate+'T00:00:00Z')-7*86400000).toISOString().slice(0,10)+'T12:00');
+  await page.locator('#username').fill('alice');await page.locator('#password').fill('not-saved');await page.locator('#tn-connect').click();await page.waitForFunction(()=>document.getElementById('tn-connection').textContent.includes('alice'));
   await page.locator('#tn-now').click();await page.locator('#tn-start-run').click();
   await page.waitForFunction(()=>document.getElementById('tn-status').textContent.includes('二维码已保存'),{},{timeout:30000});await page.locator('#tn-qr').waitFor();
   assert.match(await page.locator('#tn-records').innerText(),/待付款/);assert.match(await page.locator('#tn-countdown').innerText(),/分/);

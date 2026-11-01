@@ -5,13 +5,18 @@
   <div class="brand"><span class="brand-mark">交</span><div><strong>交大助手</strong><small>让琐事，从容一点</small></div></div>
   <div class="nav-caption">我的工作台</div>
   <nav><button data-module="courses" class="nav-item active"><span class="nav-icon">▦</span>课程助手<span class="nav-arrow">›</span></button><button data-module="shuiyuan" class="nav-item"><span class="nav-icon">≋</span>水源帖子<span class="nav-arrow">›</span></button><button data-module="tennis" class="nav-item"><span class="nav-icon">◉</span>网球预约<span class="nav-arrow">›</span></button></nav>
-  <div class="sidebar-bottom"><span class="small-leaf">✳</span><p>留一点时间<br>给课堂以外的生活。</p><small>本地运行 · Desktop 1.5</small></div>
+  <div class="sidebar-bottom"><span class="small-leaf">✳</span><p>留一点时间<br>给课堂以外的生活。</p><small>本地运行 · Desktop 1.6</small></div>
 </aside>
 <main>
   <header class="page-header"><div><div class="eyebrow">SJTU · CAMPUS WORKSPACE</div><h1 id="page-title">把选课安排好。</h1><p id="page-subtitle">选好课程，设好时间，剩下的交给助手。</p></div><button id="show-browser" class="connection"><span id="connection-dot" class="dot"></span><span id="connection-text">Edge 尚未连接</span><span>↗</span></button></header>
+  <section class="card credential-card" aria-label="共用 jAccount 账号">
+    <div class="section-heading"><div><h2>jAccount 账号</h2></div><span class="pill">课程 · 水源 · 网球共用</span></div>
+    <div class="account-form"><label>jAccount 用户名<input id="username" autocomplete="off" spellcheck="false" placeholder="网页未填入时使用" disabled></label><label>jAccount 密码<input id="password" type="password" autocomplete="off" placeholder="可记住，下次自动填充" disabled></label><div class="credential-actions"><button id="remember-account" class="primary soft" disabled>记住账号密码</button><button id="forget-account" class="text-button" disabled>忘记账号密码</button></div></div>
+    <p id="credential-status" class="helper" role="status" aria-live="polite">正在读取账号记忆……</p><p class="footnote">仅保存到本机，使用当前 Windows 用户加密。忘记会清除助手中的记录，不会退出 Edge 已登录的网站。</p>
+  </section>
   <section id="course-page">
     <section class="card account-card"><div class="section-heading"><div><span class="step">01</span><h2>连接教务系统</h2></div><span class="pill">专用 Edge 窗口</span></div>
-      <div class="account-form"><label>jAccount 用户名<input id="username" autocomplete="off" spellcheck="false" placeholder="网页未填入时使用"></label><label>jAccount 密码<input id="password" type="password" autocomplete="off" placeholder="仅在本次运行中保留"></label><button id="connect" class="primary">打开 Edge 并连接 <span>↗</span></button></div>
+      <button id="connect" class="primary">打开 Edge 并连接 <span>↗</span></button>
       <p class="helper" id="browser-message">已有登录状态会优先使用；只补全网页中未填写的账号密码。</p>
     </section>
     <div class="workspace-grid">
@@ -68,7 +73,7 @@
   </section>
   <section id="tennis-page" hidden>
     <section class="card account-card"><div class="section-heading"><div><span class="step">01</span><h2>连接场馆预约</h2></div><span class="pill">每天 12:00 放号 · 提前七天</span></div>
-      <div class="account-form"><label>jAccount 用户名<input id="tn-username" autocomplete="off" placeholder="网页未填入时使用"></label><label>jAccount 密码<input id="tn-password" type="password" autocomplete="off" placeholder="仅在本次运行中保留"></label><button id="tn-connect" class="primary">连接场馆预约 ↗</button></div>
+      <button id="tn-connect" class="primary">连接场馆预约 ↗</button><p class="helper">使用上方共用的 jAccount 账号密码，已有登录状态会优先使用。</p>
       <p id="tn-connection" class="helper">复用专用 Edge 登录状态；缺失的账号密码才会补填。</p>
     </section>
     <section class="card tennis-availability">
@@ -110,5 +115,5 @@
   </section>
   <footer>任务保存在本机。请保持软件、Edge 和网络可用；额外验证需在网页中处理。</footer>
 </main>
-<div id="toast" role="alert" hidden></div><script src="shuiyuan.js"></script><script src="tennis-availability.js"></script><script src="tennis.js"></script><script src="app.js"></script>
+<div id="toast" role="alert" hidden></div><script src="credentials.js"></script><script src="shuiyuan.js"></script><script src="tennis-availability.js"></script><script src="tennis.js"></script><script src="app.js"></script>
 </body></html>

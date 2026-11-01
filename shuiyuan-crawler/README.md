@@ -1,6 +1,6 @@
 # 水源帖子导出
 
-本目录是独立浏览器扩展 / 用户脚本，提供 TXT / JSON 导出。**本地项目归档、Markdown / HTML、离线图片和跨帖正文检索已集成到交大助手桌面版 1.5.0**，使用方法见 [桌面版说明](../desktop/README.md)，下载见 [v1.5.0 Release](https://github.com/jinitaimei474/MycourseGrabber/releases/tag/v1.5.0)。桌面版复用本目录的爬虫核心，项目存储与检索由桌面模块提供；下面的操作和限制均针对独立扩展。
+本目录是独立浏览器扩展 / 用户脚本，提供 TXT / JSON 导出。**本地项目归档、Markdown / HTML、离线图片和跨帖正文检索已集成到交大助手桌面版**，使用方法见 [桌面版说明](../desktop/README.md)，下载见 [v1.6.0 Release](https://github.com/jinitaimei474/MycourseGrabber/releases/tag/v1.6.0)。桌面版复用本目录的爬虫核心，项目存储与检索由桌面模块提供；下面的操作和限制均针对独立扩展。
 
 在已经登录的水源页面中输入**帖子网址 / 编号 / 标题**，指定**用户名或全部**和**北京时间范围**，导出该主题内的主楼和回复。每条内容附作者、楼层、发帖时间和原帖链接。
 

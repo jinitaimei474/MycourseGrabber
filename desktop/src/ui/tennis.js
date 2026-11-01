@@ -22,7 +22,7 @@ window.tennisUI=(()=>{
   if(!initialized){if(t.config){candidates=t.config.candidates;$('tn-start').value=dt(t.config.startAt);$('tn-end').value=dt(t.config.endAt);$('tn-interval').value=t.config.intervalMs/1000;}else{const day=dt(Date.now()+7*86400000).slice(0,10);$('tn-date').value=day;times(noon(day));}initialized=true;}
   const configKey=JSON.stringify(t.config);if(t.config&&configKey!==lastConfig){candidates=t.config.candidates.map(c=>({...c}));$('tn-start').value=dt(t.config.startAt);$('tn-end').value=dt(t.config.endAt);$('tn-interval').value=t.config.intervalMs/1000;}lastConfig=configKey;
   $('tn-connection').textContent=t.connected?`已连接 · ${t.owner}`:'复用专用 Edge 登录；额外验证请在网页中完成。';$('tn-status').textContent=t.warning||t.message;
-  for(const id of ['tn-username','tn-password','tn-connect','tn-venue','tn-date','tn-time','tn-court','tn-add','tn-start','tn-end','tn-interval','tn-release','tn-now','tn-save','tn-start-run','tn-check'])$(id).disabled=state.busy;
+  for(const id of ['tn-connect','tn-venue','tn-date','tn-time','tn-court','tn-add','tn-start','tn-end','tn-interval','tn-release','tn-now','tn-save','tn-start-run','tn-check'])$(id).disabled=state.busy;
   $('tn-stop').disabled=!(state.busy&&state.operationModule==='tennis');drawCandidates();
   $('tn-records').replaceChildren();for(const r of [...t.records].sort((a,b)=>b.updatedAt-a.updatedAt)){
    const card=el('div',undefined,'tennis-record'),title=el('strong',`${r.date} · ${labels[r.state]||r.state}`);card.append(title,el('p',r.candidate?`${r.candidate.venue} ${r.candidate.time}`:r.venue||'网站已有订单'));if(r.orderId)card.append(el('p',`订单 ${r.orderId}${r.amount?' · ¥'+r.amount:''}`,'muted'));
@@ -38,7 +38,7 @@ window.tennisUI=(()=>{
  $('tn-add').onclick=()=>{const c={venue:$('tn-venue').value,date:$('tn-date').value,time:$('tn-time').value,court:$('tn-court').value.trim()};if(!c.date){window.toast('请选择预约日期');return;}if(candidates.some(x=>JSON.stringify(x)===JSON.stringify(c))){window.toast('这个候选已经加入');return;}if(candidates.length>=30){window.toast('最多 30 个候选');return;}candidates.push(c);drawCandidates();};
  $('tn-release').onclick=()=>{const day=candidates[0]?.date||$('tn-date').value;if(day)times(noon(day));};$('tn-now').onclick=()=>times(Date.now()+1000);
  $('tn-save').onclick=()=>call('tennisConfigure',config());
- $('tn-connect').onclick=()=>call('tennisConnect',{username:$('tn-username').value,password:$('tn-password').value});
+ $('tn-connect').onclick=()=>call('tennisConnect',window.credentialsUI.read());
  $('tn-start-run').onclick=async()=>{if(!current?.tennis.connected){window.toast('请先连接场馆预约');return;}if(await call('tennisConfigure',config()))await call('tennisStart');};
  $('tn-stop').onclick=()=>call('tennisStop');$('tn-show').onclick=()=>call('tennisShow');$('tn-check').onclick=()=>call('tennisCheck');setInterval(countdown,1000);
  return {render};

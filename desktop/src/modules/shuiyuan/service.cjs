@@ -3,6 +3,7 @@ const {EventEmitter}=require('node:events');
 const core=require('../../../vendor/shuiyuan-core.js');
 const {guard,wait}=require('../../services/model.cjs');
 const {Archive}=require('./archive.cjs');
+const {fillCredentials}=require('../../services/browser.cjs');
 const {searchSpec,categoryName,topicSummary,topicMatches,tagNames,plainText,exportText}=require('./model.cjs');
 const ORIGIN=core.ORIGIN;
 class ShuiyuanService extends EventEmitter{
@@ -65,7 +66,10 @@ class ShuiyuanService extends EventEmitter{
       this.page=this.browser.context.pages().find(p=>p.url().startsWith(ORIGIN+'/'))||await this.browser.context.newPage();
       await this.page.goto(ORIGIN+'/',{waitUntil:'domcontentloaded',timeout:30000});
     }
-    if(new URL(this.page.url()).origin!==ORIGIN){await this.page.bringToFront();throw Error('请在打开的 Edge 窗口完成水源登录，再点击“连接水源”');}
+    if(new URL(this.page.url()).origin!==ORIGIN){
+      if(new URL(this.page.url()).origin==='https://jaccount.sjtu.edu.cn'&&this.browser.credentials?.username&&this.browser.credentials?.password)await fillCredentials(this.page,this.browser.credentials,signal,Date.now()+10000);
+      await this.page.bringToFront();throw Error('请在打开的 Edge 窗口完成水源登录，再点击“连接水源”');
+    }
     const data=await this.client.get('/session/current.json',{signal});const name=data.current_user?.username;
     if(!name)throw Error('请先在 Edge 中登录水源');
     if(this.username&&this.username!==name){this.topics=[];this.result=null;this.spec=null;this.more=false;}

@@ -1,7 +1,7 @@
 {
   "name": "sjtu-assistant-desktop",
   "productName": "SJTU Assistant",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "Local SJTU course, Shuiyuan and tennis assistant for Windows",
   "author": "Local SJTU Assistant Project",
@@ -15,7 +15,8 @@
     "test:ui": "node test/ui.cjs",
     "test:tennis": "node test/tennis-browser.cjs && node test/tennis-availability-browser.cjs && node test/tennis-ui.cjs && node test/tennis-availability-ui.cjs",
     "test:package": "node test/package.cjs",
-    "build": "npm run sync && node scripts/build.cjs"
+    "build": "npm run sync && node scripts/build.cjs",
+    "test:credentials": "node test/credentials-ui.cjs && node test/shuiyuan-credentials.cjs"
   },
   "dependencies": {
     "playwright-core": "1.63.0",

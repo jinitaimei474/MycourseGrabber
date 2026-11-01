@@ -10,7 +10,9 @@ async function fillCredentials(page,credentials,signal,deadline=Infinity){
   for(const [selector,value,label] of [['#input-login-user',credentials.username,'用户名'],['#input-login-pass',credentials.password,'密码']]){
     guard(signal,deadline);const input=page.locator(selector);if(!await input.inputValue()){
       if(!value)throw attention(`网页未自动填入${label}，请在软件或 Edge 中补全后重新连接`);
-      guard(signal,deadline);await input.fill(value,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});
+      guard(signal,deadline);
+      try{await input.fill(value,{timeout:Math.max(1,Math.min(5000,deadline-Date.now()))});}
+      catch{guard(signal,deadline);throw attention(`无法填写 jAccount ${label}，请在 Edge 中手动处理后重新连接`);}
     }
   }
 }

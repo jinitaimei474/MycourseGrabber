@@ -1,12 +1,14 @@
 # SJTU Assistant · 交大助手
 
-Windows 桌面软件，集成课程查询与定时选课、水源帖子归档与跨帖检索、网球空闲场次查询与预约。当前发布版本为 **1.5.0**，支持 Windows 10/11 x64，需要已安装 Microsoft Edge；最终用户无需安装 Node.js 或 Python。
+Windows 桌面软件，集成课程查询与定时选课、水源帖子归档与跨帖检索、网球空闲场次查询与预约。当前发布版本为 **1.6.0**，支持 Windows 10/11 x64，需要已安装 Microsoft Edge；最终用户无需安装 Node.js 或 Python。
+
+**1.6.0 新增账号记忆**：在顶部填写 jAccount 账号密码，点击“记住账号密码”，重启后自动填充；支持忘记记录。详见 [桌面版说明](desktop/README.md)。
 
 ## 下载与启动
 
-从 [v1.5.0 Release](https://github.com/jinitaimei474/MycourseGrabber/releases/tag/v1.5.0) 下载 `SJTU-Assistant-v1.5.0-win32-x64.zip` 和 `SHA256SUMS.txt`。解压完整文件夹后运行 `SJTU-Assistant.exe`，保留旁边的所有依赖文件。GitHub 自动生成的 Source code 附件是源码，运行软件请下载上述 Windows ZIP。
+从 [v1.6.0 Release](https://github.com/jinitaimei474/MycourseGrabber/releases/tag/v1.6.0) 下载 `SJTU-Assistant-v1.6.0-win32-x64.zip` 和 `SHA256SUMS.txt`。解压完整文件夹后运行 `SJTU-Assistant.exe`，保留旁边的所有依赖文件。GitHub 自动生成的 Source code 附件是源码，运行软件请下载上述 Windows ZIP。
 
-升级前退出旧版。新旧版本共用原用户数据目录，归档资料继续选择原项目文件夹即可。完整使用、校验与开发步骤见 [桌面版说明](desktop/README.md)，本版变更见 [1.5.0 更新说明](docs/releases/v1.5.0.md)。
+升级前退出旧版。新旧版本共用原用户数据目录，归档资料继续选择原项目文件夹即可。完整使用、校验与开发步骤见 [桌面版说明](desktop/README.md)，本版变更见 [1.6.0 更新说明](docs/releases/v1.6.0.md)。
 
 ## 桌面版功能
 
@@ -29,11 +31,11 @@ Windows 桌面软件，集成课程查询与定时选课、水源帖子归档与
 
 ## 源码与文档
 
-`main` 为集成主分支，已包含 `crawlshuiyuan` 的归档与跨帖检索实现。复现已发布的二进制请使用 `v1.5.0` 标签；主分支可继续更新文档和后续代码。
+`main` 为集成主分支，已包含水源归档、跨帖检索与 jAccount 账号记忆。复现已发布的二进制请使用 `v1.6.0` 标签；主分支可继续更新文档和后续代码。
 
 - [桌面版使用与开发](desktop/README.md)：`desktop/` 中的 Electron 软件。
 - [水源独立扩展说明](shuiyuan-crawler/README.md)：浏览器内的 TXT / JSON 导出工具；项目归档与跨帖检索请使用桌面版。
-- [1.5.0 发布说明](docs/releases/v1.5.0.md)：新增功能、升级方法与验证范围。
+- [1.6.0 发布说明](docs/releases/v1.6.0.md)：新增功能、升级方法与验证范围。
 - [课程长时任务说明](docs/session-renewal.md)：浏览器扩展的刷新与会话限制。
 
 ## 课程浏览器扩展 v0.6

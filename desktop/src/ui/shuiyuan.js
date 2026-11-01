@@ -49,7 +49,7 @@
  function localSearch(offset=0){if(offset===0){localSpec={query:$('sy-local-query').value,authors:$('sy-local-author').value,category:$('sy-local-category').value,tag:$('sy-local-tag').value,start:$('sy-local-start').value.trim(),end:$('sy-local-end').value.trim()};}localDirty=false;command('shuiyuanLocalSearch',{...localSpec,offset});}
  $('sy-local-search').onclick=()=>localSearch();$('sy-local-prev').onclick=()=>localSearch(Math.max(0,state.shuiyuan.localResult.offset-30));$('sy-local-next').onclick=()=>localSearch(state.shuiyuan.localResult.offset+30);
  for(const name of ['query','author','category','tag','start','end']){$('sy-local-'+name).oninput=()=>{localDirty=true;renderLocal(state.shuiyuan,state.busy);};$('sy-local-'+name).onkeydown=e=>{if(e.key==='Enter'&&!e.isComposing&&!$('sy-local-search').disabled)localSearch();};}
- $('sy-connect').onclick=()=>command('shuiyuanConnect');$('sy-show').onclick=()=>command('shuiyuanShow');
+ $('sy-connect').onclick=()=>command('shuiyuanConnect',window.credentialsUI.read());$('sy-show').onclick=()=>command('shuiyuanShow');
  $('sy-project').onclick=()=>command('shuiyuanProject');$('sy-project-open').onclick=()=>command('shuiyuanOpenProject');
  $('sy-mode').onchange=()=>{$('sy-query').placeholder=$('sy-mode').value==='owner'?'输入帖主的用户名，例如 @alice':'输入帖子名称、编号或链接';};
  $('sy-search').onclick=()=>{selected.clear();selection();command('shuiyuanSearch',{mode:$('sy-mode').value,query:$('sy-query').value,category:$('sy-category').value,tag:$('sy-tag').value});};

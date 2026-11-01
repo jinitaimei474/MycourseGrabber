@@ -32,3 +32,5 @@
 .tennis-slot input { width: 17px; height: 17px; min-height: 17px; margin: 0; accent-color: var(--green); }
 .tennis-slot strong { display: block; font-size: 13px; color: var(--ink); }
 .tennis-slot span { display: block; margin-top: 6px; font-size: 11px; color: #728374; }
+
+.credential-card{margin-bottom:20px}.credential-actions{display:flex;flex-direction:column;gap:8px}.credential-card .footnote{margin-bottom:0}

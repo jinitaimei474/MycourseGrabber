@@ -8,11 +8,12 @@ function datetime(ms){return new Date(ms+28800000).toISOString().slice(0,19);}
 function keyOf(t){return `${t.context.split('|').slice(0,2).join('|')}|${t.kchId}`;}
 function render(state){
  current=state;
+ window.credentialsUI.render(state);
  window.shuiyuanUI.render(state);
  window.tennisUI.render(state);
  $('connection-text').textContent=state.connected?'自主选课已连接':'Edge 尚未连接';$('connection-dot').className=`dot${state.connected?' connected':''}`;
  $('browser-message').textContent=state.browserMessage;$('run-message').textContent=state.status.message;$('run-dot').className=`dot${state.busy?' running':state.status.phase==='success'?' connected':''}`;
- for(const id of ['username','password','connect','query','teachers','category','search','start-time','end-time','interval','reload','start-run'])$(id).disabled=state.busy;
+ for(const id of ['connect','query','teachers','category','search','start-time','end-time','interval','reload','start-run'])$(id).disabled=state.busy;
  $('stop').disabled=!state.busy;
  if(!initialized){$('start-time').value=datetime(state.config.startAt);$('end-time').value=datetime(state.config.endAt);$('interval').value=String(state.config.intervalMs/1000);$('reload').value=String(state.config.reloadMinutes);initialized=true;}
  const selected=$('category').value;$('category').replaceChildren();

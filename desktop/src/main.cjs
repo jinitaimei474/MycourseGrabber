@@ -1,16 +1,17 @@
 'use strict';
-const {app,BrowserWindow,ipcMain,dialog,powerSaveBlocker,Notification,shell}=require('electron');
+const {app,BrowserWindow,ipcMain,dialog,powerSaveBlocker,Notification,shell,safeStorage}=require('electron');
+const {CredentialStore}=require('./services/credentials.cjs');
 const path=require('node:path');const {pathToFileURL}=require('node:url');
 const {Store}=require('./services/store.cjs');const {Scheduler}=require('./services/scheduler.cjs');const {BrowserSession}=require('./services/browser.cjs');const {safeError}=require('./services/model.cjs');const modules=require('./modules/index.cjs');
 const {ShuiyuanService}=require('./modules/shuiyuan/service.cjs');const fs=require('node:fs/promises');
 const {TennisStore}=require('./modules/tennis/store.cjs');const {TennisAdapter}=require('./modules/tennis/adapter.cjs');const {TennisService}=require('./modules/tennis/service.cjs');
 if(process.env.SJTU_ASSISTANT_DATA_DIR)app.setPath('userData',path.resolve(process.env.SJTU_ASSISTANT_DATA_DIR));
 if(!app.requestSingleInstanceLock()){app.quit();}else{
-let win,store,browser,scheduler,forum,tennis,operation=null,operationModule='',connected=false,categories=[],results=[],logs=[],blocker=null;
+let win,store,browser,scheduler,forum,tennis,credentials,operation=null,operationModule='',connected=false,categories=[],results=[],logs=[],blocker=null;
 let browserMessage='尚未连接 Edge';
-function errorText(error){let message=safeError(error);for(const value of [browser?.credentials.password])if(value)message=message.split(value).join('[隐藏]');return message;}
+function errorText(error){let message=String(error?.message||error||'操作失败');for(const value of [browser?.credentials.password,credentials?.get().password])if(value)message=message.split(value).join('[隐藏]');return safeError(message);}
 function log(message){message=errorText(message);if(logs.at(-1)?.message!==message)logs.push({time:Date.now(),message});logs=logs.slice(-100);}
-function snapshot(){const state=store.view();return {...state,modules,busy:!!operation||!!scheduler.controller||!!tennis.controller,operationModule:operation?operationModule:scheduler.controller?'courses':tennis.controller?'tennis':'',shuiyuan:forum.view(),tennis:tennis.view(),connected,browserMessage,categories,results,logs,status:scheduler.status};}
+function snapshot(){const state=store.view();return {...state,modules,credentials:credentials.view(),busy:!!operation||!!scheduler.controller||!!tennis.controller,operationModule:operation?operationModule:scheduler.controller?'courses':tennis.controller?'tennis':'',shuiyuan:forum.view(),tennis:tennis.view(),connected,browserMessage,categories,results,logs,status:scheduler.status};}
 function emit(){if(win&&!win.isDestroyed())win.webContents.send('assistant:state',snapshot());}
 function idle(allowMonitor=false){if(operation||scheduler.controller||(tennis?.controller&&!(allowMonitor&&tennis.mode==='monitor')))throw Error('当前操作尚未结束，请先停止');}
 function wake(){const running=!!scheduler?.controller||!!tennis?.controller;if(running&&blocker===null)blocker=powerSaveBlocker.start('prevent-app-suspension');if(!running&&blocker!==null){powerSaveBlocker.stop(blocker);blocker=null;}}
@@ -19,6 +20,9 @@ function forumTask(fn){return exclusive(async signal=>{try{await fn(signal);}cat
 async function dispatch(action,payload={}){
   switch(action){
     case 'snapshot':return snapshot();
+    case 'credentialsLoad':return credentials.get();
+    case 'credentialsSave':return exclusive(async()=>{await credentials.save(payload);browser.credentials=credentials.get();},'account');
+    case 'credentialsForget':return exclusive(async()=>{await credentials.forget();browser.credentials={username:'',password:''};},'account');
     case 'tennisConnect':return exclusive(signal=>tennis.connect(payload,signal),'tennis');
     case 'tennisConfigure':idle();tennis.configure(payload);return snapshot();
     case 'tennisStart':idle();if(!tennis.connected)throw Error('请先连接场馆预约');tennis.run().catch(error=>{log(error);emit();});await Promise.resolve();return snapshot();
@@ -39,7 +43,7 @@ async function dispatch(action,payload={}){
       const source=tennis.adapter.qrPath(record.qrFile);const file=await dialog.showSaveDialog(win,{title:'保存微信缴费二维码',defaultPath:`网球缴费-${record.date}.png`,filters:[{name:'PNG 图片',extensions:['png']}]});
       if(!file.canceled&&file.filePath){await fs.copyFile(source,file.filePath);tennis.note('缴费二维码已保存到所选位置。');}
     },'tennis');
-    case 'shuiyuanConnect':return forumTask(signal=>forum.connect(signal));
+    case 'shuiyuanConnect':return forumTask(signal=>{browser.credentials={username:String(payload.username??browser.credentials.username??'').slice(0,200),password:String(payload.password??browser.credentials.password??'').slice(0,1000)};return forum.connect(signal);});
     case 'shuiyuanLocalSearch':return forumTask(()=>forum.searchLocal(payload));
     case 'shuiyuanLocalOpen':return forumTask(async()=>{
       const target=await forum.localPost(payload);
@@ -93,9 +97,11 @@ async function dispatch(action,payload={}){
     default:throw Error('不支持的操作');
   }
 }
-app.whenReady().then(()=>{
+app.whenReady().then(async()=>{
+  credentials=new CredentialStore({file:path.join(app.getPath('userData'),'credentials.json'),secure:safeStorage});await credentials.load();
   store=new Store(path.join(app.getPath('userData'),'tasks.json'));
   browser=new BrowserSession({profileDir:path.join(app.getPath('userData'),'edge-profile'),tempDir:path.join(app.getPath('userData'),'temporary'),adapterPath:path.join(__dirname,'../vendor/course-timer.user.js')});
+  browser.credentials=credentials.get();
   scheduler=new Scheduler({store,browser});
   forum=new ShuiyuanService({browser});forum.on('update',emit);
   tennis=new TennisService({store:new TennisStore(path.join(app.getPath('userData'),'tennis.json')),adapter:new TennisAdapter({browser,qrDir:path.join(app.getPath('userData'),'tennis-qr')})});
