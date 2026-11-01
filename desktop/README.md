@@ -1,10 +1,21 @@
-# 交大助手 · Windows 桌面版 1.5
+# 交大助手 · Windows 桌面版 1.5.0
 
-**1.5 新增跨帖正文检索**：新版位于 `release/1.5.0/SJTU-Assistant-win32-x64/SJTU-Assistant.exe`。选择已有资料项目，在“搜索已保存内容”中按正文关键词、发言作者、北京时间、类别和标签组合筛选，点击结果定位本地楼层。无需重新采集或在线登录。
+独立窗口管理课程查询与定时任务、水源归档与检索、网球场次查询与预约，自动打开专用 Edge。详细变更见 [1.5.0 更新说明](../docs/releases/v1.5.0.md)。
 
-**1.4 新增水源本地资料项目**：新版位于 `release/1.4.0/SJTU-Assistant-win32-x64/SJTU-Assistant.exe`。采集前选择项目文件夹，自动识别已有帖子并合并更新，生成 Markdown、保留正文排版的 HTML、结构化 JSON，以及本地图片。退出旧版后打开新版，需保留整个发布目录。
+## 获取和升级
 
-**1.3 新增实时空闲场次与误提示处理**：新版位于 `release/1.3.0/SJTU-Assistant-win32-x64/SJTU-Assistant.exe`。退出旧版后打开新版，保留整个发布文件夹。课程、水源功能及专用 Edge 登录配置继续使用原数据目录。
+从 [v1.5.0 Release](https://github.com/jinitaimei474/MycourseGrabber/releases/tag/v1.5.0) 下载 `SJTU-Assistant-v1.5.0-win32-x64.zip` 和 `SHA256SUMS.txt`，退出旧版后解压整个文件夹并运行 `SJTU-Assistant.exe`。GitHub 的 Source code 附件不包含可直接运行的桌面程序。发布包需保留全部文件，不能只复制 EXE；从源码构建后的路径是 `release/1.5.0/SJTU-Assistant-win32-x64/SJTU-Assistant.exe`。
+
+在下载目录用 PowerShell 计算 ZIP 的 SHA256，与校验文件中的同名条目比较：
+
+```powershell
+Get-FileHash .\SJTU-Assistant-v1.5.0-win32-x64.zip -Algorithm SHA256
+Get-Content .\SHA256SUMS.txt
+```
+
+课程、网球配置和专用 Edge 登录配置继续使用原用户数据目录。水源资料位于你选择的项目中；重新选择原文件夹即可加载，移动时复制整个 `shuiyuan-archive`。
+
+1.5.0 包含跨帖正文检索，以及此前的本地项目归档、离线图片、实时空闲场次和预约功能。选择已有项目后，可按正文关键词、作者、北京时间、类别和标签组合筛选并定位楼层，无需重新采集或在线登录。
 
 ## 实时空闲场次
 
@@ -33,8 +44,6 @@
 开发验证：`npm test`、`npm run test:tennis`。所有网球浏览器/UI 测试拦截学校和缴费网址，不发送真实订单或支付请求。
 
 独立桌面窗口管理账号连接、课程查询、多课程任务和定时刷新。运行时打开专用 Edge，通过 jAccount 登录后悬浮“选课”并进入“自主选课”。无须安装扩展或粘贴控制台代码。
-
-**1.1 新增内置水源模块**：左侧“水源帖子”中按标题、编号/网址或帖主检索，选择类别和标签筛选，勾选帖子后按发言用户采集，导出带发帖时间的 TXT / JSON。新版程序位于 `release/1.1.0/SJTU-Assistant-win32-x64/SJTU-Assistant.exe`，需保留旁边的依赖文件。请退出旧版后启动新版，原课程任务和专用 Edge 配置仍使用同一用户数据目录。
 
 ## 水源帖子
 
@@ -113,6 +122,7 @@ npm test
 npm run test:browser
 npm run test:ui
 npm run test:shuiyuan
+npm run test:tennis
 npm run build
 npm run test:package
 ```
@@ -130,13 +140,23 @@ npm run test:package
 | `src/services/ocr.cjs`、`scripts/ocr.ps1` | 本地 Windows OCR，图像用后删除 |
 | `src/services/store.cjs` | 任务持久化及账户隔离，不保存密码 |
 | `src/services/scheduler.cjs` | 宿主轮询、停止、截止时间、结果不明保护 |
-| `src/modules/index.cjs` | 课程与水源模块目录 |
-| `src/modules/shuiyuan/` | 水源会话、类别/标签、检索、批量采集及导出 |
-| `src/ui/shuiyuan.js` | 水源筛选表单、多选结果、进度及安全文本预览 |
+| `src/modules/index.cjs` | 课程、水源与网球模块目录 |
+| `src/modules/shuiyuan/service.cjs` | 水源会话、在线搜索、批量采集、归档与检索协调 |
+| `src/modules/shuiyuan/archive.cjs` | 项目识别、按楼层合并、JSON 与阅读文件保存、本地图片 |
+| `src/modules/shuiyuan/presentation.cjs` | 正文清理、纯文本及 Markdown / HTML 转换 |
+| `src/modules/shuiyuan/search.cjs` | 内存 SQLite 索引、正文关键词及作者/时间/类别/标签过滤 |
+| `src/modules/tennis/` | 场馆适配、空闲监测、预约与订单记录 |
+| `src/ui/shuiyuan.js` | 水源筛选、项目选择、采集进度、本地检索与楼层跳转 |
 
 水源模块通过专属受限 IPC 调用，只允许预先定义的水源 GET 接口；渲染器不能提交任意网址、文件路径或命令。已有 `../shuiyuan-crawler` 扩展可独立使用，桌面版复用其核心而不注入旧扩展面板。
 
 ## 验证边界
+
+2026-11-01 主分支整合：重新运行桌面 46 项、根目录课程 31 项、独立水源核心 7 项单元测试，共 84 项通过。此次整合更新使用文档，应用版本仍为 1.5.0。
+
+2026-10-30 发布验证：归档、离线图片和跨帖检索经过模拟论坛与 Electron 界面验证；最终 ZIP 解压后验证 EXE 启动、独立测试数据、Edge 组件、Markdown 归档、正文检索和楼层定位。真实水源会话在手动完成 jAccount 登录后，关闭助手与专用 Edge、重新启动可复用登录。本轮未实际批量采集真实帖子，不能以模拟测试替代全部真实内容的验收。Release 的 ZIP 与 SHA256 校验文件已上传并核对服务器摘要。
+
+以下为早期版本验证记录，日期与范围仅对应当时版本。
 
 2026-09-21：新增水源模型测试、真实 Edge 中的模拟 Discourse 接口测试，以及真实 Electron 界面端到端测试。覆盖类别/标签、帖主区别于回复者、搜索翻页去重、45 楼分批获取、用户与时间筛选、停止保留部分结果、账号变化清空、TXT/JSON、文本预览及两个模块的操作互斥。桌面 16 项、根目录课程 31 项、原爬虫 7 项单元测试全部通过；课程和水源的浏览器/UI 测试通过。构建后的 1.1 EXE 已启动验证，确认水源入口、打包核心和专用 Edge 均可用。此次新增桌面筛选入口未使用真实水源账号做线上验证；之前独立爬虫的 5 楼现场验证不能替代本次新增功能的线上验收。
 
